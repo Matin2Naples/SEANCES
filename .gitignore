@@ -1,0 +1,7 @@
+venv/
+__pycache__/
+*.pyc
+.DS_Store
+*.save
+allocine_page.html
+first_movie_html.html

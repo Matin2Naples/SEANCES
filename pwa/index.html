@@ -1,0 +1,847 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Séance(s) - Prototype</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        background: #929299;
+      }
+      #root {
+        min-height: 100vh;
+      }
+      .seances-loader {
+        width: 72px;
+        height: 72px;
+        position: relative;
+      }
+      .seances-dot {
+        position: absolute;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #ffffff;
+        filter: brightness(0);
+        animation: seances-pulse 1.1s linear infinite;
+      }
+      @keyframes seances-pulse {
+        0% { filter: brightness(1); }
+        10% { filter: brightness(0.9); }
+        20% { filter: brightness(0.8); }
+        30% { filter: brightness(0.7); }
+        40% { filter: brightness(0.6); }
+        50% { filter: brightness(0.5); }
+        60% { filter: brightness(0.4); }
+        70% { filter: brightness(0.3); }
+        80% { filter: brightness(0.2); }
+        90% { filter: brightness(0.1); }
+        100% { filter: brightness(0); }
+      }
+      .seances-garamond {
+        font-family: "EB Garamond", serif;
+        font-size: 16px;
+        line-height: 20px;
+        margin: 0;
+        color: #000000;
+      }
+      .seances-ellipsis {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .seances-title { margin: 0; }
+      .seances-director { font-weight: 600; margin: 0 0 12px 0; }
+  .seances-duration { margin: 0 0 12px 0; }
+      .seances-avec { margin: 0; }
+</style>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script type="text/babel">
+      const { useState, useEffect } = React;
+
+      const PlusIcon = ({ size = 20, color = "#000", style = {}, onClick }) => (
+        <svg
+          width={size}
+          height={size}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke={color}
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{ cursor: "pointer", ...style }}
+          onClick={onClick}
+        >
+          <line x1="12" y1="5" x2="12" y2="19" />
+          <line x1="5" y1="12" x2="19" y2="12" />
+        </svg>
+      );
+      const MinusIcon = ({ size = 20, color = "#000", style = {}, onClick }) => (
+        <svg
+          width={size}
+          height={size}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke={color}
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{ cursor: "pointer", ...style }}
+          onClick={onClick}
+        >
+          <line x1="5" y1="12" x2="19" y2="12" />
+        </svg>
+      );
+
+      const SeanceApp = () => {
+        const [selectedDate, setSelectedDate] = useState(new Date());
+        const [showDatePicker, setShowDatePicker] = useState(false);
+        const [showCinemaSelector, setShowCinemaSelector] = useState(false);
+        const [showtimesData, setShowtimesData] = useState(null);
+        const [loading, setLoading] = useState(true);
+        const [error, setError] = useState(null);
+        const [expandedFilm, setExpandedFilm] = useState(null);
+
+        const getApiUrl = () => {
+          const params = new URLSearchParams(window.location.search);
+          const override = params.get("api");
+          if (override) return override.replace(/\/$/, "");
+          if (window.location.hostname) {
+            return `http://${window.location.hostname}:5001`;
+          }
+          return "http://localhost:5001";
+        };
+        const API_URL = getApiUrl();
+        const isDemoMode = new URLSearchParams(window.location.search).get("demo") === "1";
+
+        const [selectedCinemas, setSelectedCinemas] = useState([
+          "Christine Cinéma Club",
+          "Filmothèque du Quartier Latin",
+          "La Cinémathèque Française",
+          "Le Champo",
+          "Le Grand Action",
+          "Le Louxor",
+          "MK2 Quai de Loire",
+          "MK2 Quai de Seine",
+          "Reflet Médicis",
+          "Écoles Cinéma Club",
+          "UGC Ciné Cité Les Halles",
+        ]);
+
+        const [allCinemas, setAllCinemas] = useState([]);
+
+        useEffect(() => {
+          if (isDemoMode) {
+            const demoCinemas = [
+              "UGC Les Halles",
+              "Le Champo",
+              "Reflet Médicis",
+            ];
+            setAllCinemas(demoCinemas);
+            setSelectedCinemas(demoCinemas);
+            return;
+          }
+          fetch(`${API_URL}/cinemas`)
+            .then((res) => res.json())
+            .then((data) => {
+              const cinemas = data.cinemas || [];
+              setAllCinemas(cinemas);
+              setSelectedCinemas((prev) => {
+                const prevNormalized = new Set(prev.map(normalizeCinemaName));
+                return cinemas.filter((name) => prevNormalized.has(normalizeCinemaName(name)));
+              });
+            })
+            .catch((err) => {
+              console.error("Erreur chargement cinémas:", err);
+            });
+        }, []);
+
+        useEffect(() => {
+          if (isDemoMode) {
+            setLoading(true);
+            const demoData = {
+              "UGC Les Halles": [
+                {
+                  title: "Jusqu'à l'aube",
+                  director: "Sho Miyake",
+                  duration: "1h40",
+                  showtimes: [
+                    { start: "19:15", end: "21:29" },
+                    { start: "21:45", end: "23:59" },
+                  ],
+                  genres: ["Comédie", "Drame"],
+                  actors: ["Acteur 1", "Acteur 2", "Acteur 3", "Acteur 4", "Acteur 5"],
+                  poster_url: null,
+                  release_date: "2025-01-17",
+                },
+                {
+                  title: "Les Courageux",
+                  director: "Jasmine Gordon",
+                  duration: "1h20",
+                  showtimes: [{ start: "20:30", end: "22:05" }],
+                  genres: ["Drame"],
+                  actors: ["Actrice 1", "Acteur 2", "Acteur 3"],
+                  poster_url: null,
+                  release_date: "2024-11-10",
+                },
+              ],
+              "Le Champo": [
+                {
+                  title: "Stranger Than Paradise",
+                  director: "Jim Jarmusch",
+                  duration: "1h51",
+                  showtimes: [
+                    { start: "19:00", end: "20:51" },
+                    { start: "21:25", end: "23:16" },
+                  ],
+                  genres: ["Comédie", "Drame"],
+                  actors: ["John Lurie", "Eszter Balint", "Richard Edson"],
+                  poster_url: "https://fr.web.img4.acsta.net/c_160_213/img/46/dc/46dcd9002ee146bb79d3482d3f2c8fb5.jpg",
+                  release_date: "1985-01-09",
+                },
+              ],
+              "Reflet Médicis": [
+                {
+                  title: "Father Mother Sister Brother",
+                  director: "Jim Jarmusch",
+                  duration: "1h51",
+                  showtimes: [{ start: "18:45", end: "20:36" }],
+                  genres: ["Drame", "Romance"],
+                  actors: ["Acteur 1", "Acteur 2", "Acteur 3", "Acteur 4", "Acteur 5"],
+                  poster_url: null,
+                  release_date: "2026-01-15",
+                },
+              ],
+            };
+            setShowtimesData(demoData);
+            setLoading(false);
+            setError(null);
+            return;
+          }
+          loadShowtimes();
+        }, [selectedDate]);
+
+        const loadShowtimes = async () => {
+          setLoading(true);
+          setError(null);
+          const dateStr = selectedDate.toISOString().split("T")[0];
+          try {
+            const response = await fetch(`${API_URL}/showtimes?date=${dateStr}`);
+            if (!response.ok) throw new Error("Erreur API");
+            const data = await response.json();
+            setShowtimesData(data.showtimes);
+            setLoading(false);
+          } catch (err) {
+            setError("Impossible de charger les horaires");
+            setLoading(false);
+            console.error(err);
+          }
+        };
+
+        const toggleCinema = (cinema) => {
+          if (selectedCinemas.includes(cinema)) {
+            setSelectedCinemas(selectedCinemas.filter((c) => c !== cinema));
+          } else {
+            setSelectedCinemas([...selectedCinemas, cinema]);
+          }
+        };
+
+        const getNextDays = () => {
+          const days = [];
+          for (let i = 0; i < 7; i++) {
+            const date = new Date();
+            date.setDate(date.getDate() + i);
+            days.push(date);
+          }
+          return days;
+        };
+
+        const formatDate = (date) =>
+          date.toLocaleDateString("fr-FR", { day: "numeric", month: "long" });
+
+        const toggleFilmExpansion = (cinema, filmIdx) => {
+          const filmKey = `${cinema}-${filmIdx}`;
+          setExpandedFilm(expandedFilm === filmKey ? null : filmKey);
+        };
+
+        const formatReleaseDate = (dateStr) => {
+          if (!dateStr) return "";
+          const date = new Date(dateStr);
+          return date.getFullYear();
+        };
+        const normalizeCinemaName = (name) =>
+          name
+            .toLowerCase()
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .replace(/[^a-z0-9\s]/g, "")
+            .replace(/\s+/g, " ")
+            .trim();
+
+        if (showCinemaSelector) {
+          return (
+            <div
+              style={{
+                fontFamily: "Helvetica, Arial, sans-serif",
+                backgroundColor: "#929299",
+                minHeight: "100vh",
+              }}
+            >
+              <div
+                style={{
+                  position: "sticky",
+                  top: 0,
+                  backgroundColor: "#000000",
+                  color: "#e2e4e8",
+                padding: "14px",
+                  zIndex: 100,
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    position: "relative",
+                  }}
+                >
+                  <div style={{ fontSize: "24px", fontWeight: "400", color: "#c1ff00" }}>
+                    Séance(s)
+                  </div>
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: "50%",
+                      fontSize: "24px",
+                      color: "#ffffff",
+                    }}
+                  >
+                    {formatDate(selectedDate)}
+                  </div>
+                  <div
+                    style={{
+                      position: "absolute",
+                      right: "0px",
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      width: "20px",
+                      textAlign: "right",
+                      fontSize: "20px",
+                      lineHeight: "20px",
+                      color: "#929299",
+                      cursor: "pointer",
+                      userSelect: "none",
+                    }}
+                    onClick={() => setShowCinemaSelector(false)}
+                  >
+                    ×
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                {allCinemas.map((cinema, idx) => (
+                  <div
+                    key={idx}
+                    onClick={() => toggleCinema(cinema)}
+                    style={{
+                padding: "14px",
+                      fontSize: "24px",
+                      fontWeight: "400",
+                      color: "#000000",
+                      backgroundColor: selectedCinemas.includes(cinema) ? "#c1ff00" : "#929299",
+                      borderBottom: "1px solid #000000",
+                      cursor: "pointer",
+                      transition: "background-color 0.2s",
+                    }}
+                  >
+                    {cinema}
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div
+            style={{
+              fontFamily: "Helvetica, Arial, sans-serif",
+              backgroundColor: "#929299",
+              minHeight: "100vh",
+              paddingBottom: "40px",
+            }}
+          >
+            <div
+              style={{
+                position: "sticky",
+                top: 0,
+                backgroundColor: "#000000",
+                color: "#e2e4e8",
+                padding: "14px",
+                zIndex: 100,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  position: "relative",
+                }}
+              >
+                <div style={{ fontSize: "24px", fontWeight: "400", color: "#c1ff00" }}>
+                  Séance(s)
+                </div>
+                <div
+                  onClick={() => setShowDatePicker(!showDatePicker)}
+                  style={{
+                    position: "absolute",
+                    left: "50%",
+                    fontSize: "24px",
+                    color: "#ffffff",
+                    cursor: "pointer",
+                    userSelect: "none",
+                  }}
+                >
+                  {formatDate(selectedDate)}
+                </div>
+                <div
+                  style={{
+                    position: "absolute",
+                    right: "0px",
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    width: "20px",
+                    textAlign: "right",
+                    fontSize: "20px",
+                    lineHeight: "20px",
+                    color: "#929299",
+                    cursor: "pointer",
+                    userSelect: "none",
+                  }}
+                  onClick={() => setShowCinemaSelector(true)}
+                >
+                  +
+                </div>
+              </div>
+            </div>
+
+            {showDatePicker && (
+              <div
+                style={{
+                  position: "fixed",
+                  top: "56px",
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  backgroundColor: "#929299",
+                  zIndex: 99,
+                  overflowY: "auto",
+                }}
+              >
+                {getNextDays().map((date, idx) => (
+                  <div
+                    key={idx}
+                    onClick={() => {
+                      setSelectedDate(date);
+                      setShowDatePicker(false);
+                    }}
+                    style={{
+                      padding: "14px",
+                      paddingLeft: "50%",
+                      fontSize: "24px",
+                      cursor: "pointer",
+                      color: "#000000",
+                      backgroundColor:
+                        date.toDateString() === selectedDate.toDateString()
+                          ? "#c1ff00"
+                          : "#929299",
+                      borderBottom: "1px solid #000000",
+                      transition: "background-color 0.2s",
+                    }}
+                  >
+                    {formatDate(date)}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {loading && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  minHeight: "60vh",
+                  paddingTop: "24px",
+                }}
+              >
+                <div className="seances-loader" aria-label="Chargement">
+                  <span className="seances-dot" style={{ top: "4px", left: "31px", animationDelay: "0s" }} />
+                  <span className="seances-dot" style={{ top: "9px", left: "46px", animationDelay: "0.11s" }} />
+                  <span className="seances-dot" style={{ top: "22px", left: "56px", animationDelay: "0.22s" }} />
+                  <span className="seances-dot" style={{ top: "38px", left: "56px", animationDelay: "0.33s" }} />
+                  <span className="seances-dot" style={{ top: "51px", left: "46px", animationDelay: "0.44s" }} />
+                  <span className="seances-dot" style={{ top: "56px", left: "31px", animationDelay: "0.55s" }} />
+                  <span className="seances-dot" style={{ top: "51px", left: "16px", animationDelay: "0.66s" }} />
+                  <span className="seances-dot" style={{ top: "38px", left: "6px", animationDelay: "0.77s" }} />
+                  <span className="seances-dot" style={{ top: "22px", left: "6px", animationDelay: "0.88s" }} />
+                  <span className="seances-dot" style={{ top: "9px", left: "16px", animationDelay: "0.99s" }} />
+                </div>
+              </div>
+            )}
+
+            {error && (
+              <div
+                style={{
+                  padding: "40px",
+                  textAlign: "center",
+                  fontSize: "18px",
+                  color: "#ff0000",
+                }}
+              >
+                {error}
+                <div style={{ marginTop: "8px", fontSize: "12px", color: "#333" }}>
+                  API: {API_URL}
+                </div>
+                <div
+                  onClick={loadShowtimes}
+                  style={{
+                    marginTop: "16px",
+                    padding: "12px 24px",
+                    backgroundColor: "#000000",
+                    color: "#ffffff",
+                    cursor: "pointer",
+                    display: "inline-block",
+                    borderRadius: "4px",
+                  }}
+                >
+                  Réessayer
+                </div>
+              </div>
+            )}
+
+            {!loading &&
+              !error &&
+              showtimesData &&
+              selectedCinemas.map((cinema, cinemaIdx) => {
+                const showtimeKeys = Object.keys(showtimesData || {});
+                const keyByNormalized = new Map(
+                  showtimeKeys.map((name) => [normalizeCinemaName(name), name])
+                );
+                const resolvedName =
+                  keyByNormalized.get(normalizeCinemaName(cinema)) || cinema;
+                const films = showtimesData[resolvedName] || [];
+                if (films.length === 0) return null;
+
+                return (
+                  <div key={cinemaIdx}>
+                    <div
+                      style={{
+                        position: "sticky",
+                        top: "56px",
+                        backgroundColor: "#929299",
+                        padding: "14px",
+                        fontSize: "24px",
+                        fontWeight: "400",
+                        color: "#000000",
+                        borderBottom: "1px solid #000000",
+                        zIndex: 50,
+                      }}
+                    >
+                      {resolvedName}
+                    </div>
+
+                    {films.map((film, filmIdx) => {
+                      const filmKey = `${cinema}-${filmIdx}`;
+                      const isExpanded = expandedFilm === filmKey;
+                      return (
+                        <div
+                          key={filmIdx}
+                          style={{
+                            backgroundColor: "#929299",
+                            borderBottom: "1px solid #000000",
+                            padding: "14px",
+                            paddingBottom: isExpanded ? "0" : "14px",
+                            position: "relative",
+                            cursor: "pointer",
+                          }}
+                          onClick={() => toggleFilmExpansion(cinema, filmIdx)}
+                        >
+                          {!isExpanded && (
+                            <>
+                              <div
+                                style={{
+                                  display: "grid",
+                                  gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+                                  columnGap: "0px",
+                                  minWidth: 0,
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    fontFamily: '"EB Garamond", serif',
+                                    fontSize: "16px",
+                                    color: "#000000",
+                                    maxWidth: "100%",
+                                    minWidth: 0,
+                                    paddingRight: "15px",
+                                  }}
+                                >
+                                  <div className="seances-garamond seances-title seances-ellipsis">{film.title}</div>
+                                  <div className="seances-garamond seances-director seances-ellipsis">{film.director || "Réalisateur inconnu"}</div>
+                                  <div className="seances-garamond seances-duration">{film.duration || "Durée inconnue"}</div>
+                                </div>
+
+                                <div
+                                  style={{
+                                    fontFamily: '"EB Garamond", serif',
+                                    fontSize: "16px",
+                                    lineHeight: "18px",
+                                    color: "#000000",
+                                    textAlign: "left",
+                                  }}
+                                >
+                                  {film.showtimes.map((time, timeIdx) => (
+                                    <div
+                                      key={timeIdx}
+                                      style={{
+                                        marginBottom:
+                                          timeIdx < film.showtimes.length - 1 ? "4px" : "0",
+                                      }}
+                                    >
+                                      <span style={{ fontWeight: "600" }}>{time.start}</span>
+                                      <span> (→ {time.end})</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </>
+                          )}
+
+                          {isExpanded && (
+                            <div
+                              style={{
+                                display: "grid",
+                                gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+                                columnGap: "0px",
+                                minWidth: 0,
+                              }}
+                            >
+                              <div className="seances-garamond seances-title seances-ellipsis" style={{ paddingRight: "15px" }}>
+                                {film.title}
+                              </div>
+                              <div className="seances-garamond">
+                                {film.genres && film.genres.length > 0 ? film.genres[0] : ""}
+                              </div>
+
+                              <div className="seances-garamond seances-director seances-ellipsis" style={{ paddingRight: "15px" }}>
+                                {film.director || "Réalisateur inconnu"}
+                              </div>
+                              <div className="seances-garamond">
+                                {film.genres && film.genres.length > 1 ? film.genres[1] : ""}
+                              </div>
+
+                              <div className="seances-garamond seances-duration" style={{ paddingRight: "15px" }}>
+                                {film.duration || "Durée inconnue"}
+                              </div>
+                              <div className="seances-garamond">
+                                {film.release_date ? formatReleaseDate(film.release_date) : ""}
+                              </div>
+
+                              <div className="seances-garamond" style={{ paddingRight: "15px" }}>
+                                {film.actors && film.actors.length > 0 && (
+                                  <>
+                                    <div className="seances-avec">Avec :</div>
+                                    {film.actors.slice(0, 5).map((actor, idx) => (
+                                      <div key={idx}>{actor}</div>
+                                    ))}
+                                  </>
+                                )}
+                              </div>
+                              <div style={{ marginRight: "-20px" }}>
+                                {film.poster_url ? (
+                                  <img
+                                    src={film.poster_url}
+                                    alt={film.title}
+                                    style={{
+                                      width: "100%",
+                                      height: "auto",
+                                      objectFit: "cover",
+                                      display: "block",
+                                      marginTop: "6px",
+                                    }}
+                                  />
+                                ) : (
+                                  <div
+                                    style={{
+                                      width: "100%",
+                                      height: "260px",
+                                      backgroundColor: "#e6e6e6",
+                                      marginTop: "6px",
+                                    }}
+                                  />
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          <div
+                            style={{
+                              position: "absolute",
+                              right: "14px",
+                              top: "14px",
+                              transform: "translateY(-2px)",
+                              fontFamily: '"EB Garamond", serif',
+                              fontSize: "20px",
+                              lineHeight: "20px",
+                              color: "#000000",
+                              userSelect: "none",
+                            }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleFilmExpansion(cinema, filmIdx);
+                            }}
+                          >
+                            {isExpanded ? "–" : "+"}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+
+            {!loading &&
+              !error &&
+              showtimesData &&
+              selectedCinemas.length > 0 &&
+              selectedCinemas.every((cinema) => {
+                const showtimeKeys = Object.keys(showtimesData || {});
+                const keyByNormalized = new Map(
+                  showtimeKeys.map((name) => [normalizeCinemaName(name), name])
+                );
+                const resolvedName =
+                  keyByNormalized.get(normalizeCinemaName(cinema)) || cinema;
+                return (showtimesData[resolvedName] || []).length === 0;
+              }) && (
+                <div
+                  style={{
+                    padding: "40px",
+                    textAlign: "center",
+                    fontSize: "16px",
+                    color: "#000000",
+                  }}
+                >
+                  Aucun film pour les cinémas sélectionnés.
+                  <div style={{ marginTop: "8px", fontSize: "12px", color: "#333" }}>
+                    API: {API_URL}
+                  </div>
+                  <div style={{ marginTop: "12px", fontSize: "12px", color: "#333" }}>
+                    Cinémas reçus:
+                  </div>
+                  <div style={{ marginTop: "6px", fontSize: "12px", color: "#333" }}>
+                    {(showtimesData && Object.keys(showtimesData).slice(0, 6).map((name) => (
+                      <div key={name}>
+                        {name} — {(showtimesData[name] || []).length} films
+                      </div>
+                    )))}
+                  </div>
+                  <div
+                    onClick={loadShowtimes}
+                    style={{
+                      marginTop: "16px",
+                      padding: "12px 24px",
+                      backgroundColor: "#000000",
+                      color: "#ffffff",
+                      cursor: "pointer",
+                      display: "inline-block",
+                      borderRadius: "4px",
+                    }}
+                  >
+                    Recharger
+                  </div>
+                </div>
+              )}
+
+            {!loading && !error && !showtimesData && (
+              <div
+                style={{
+                  padding: "40px",
+                  textAlign: "center",
+                  fontSize: "16px",
+                  color: "#000000",
+                }}
+              >
+                Aucune donnée chargée.
+                <div style={{ marginTop: "8px", fontSize: "12px", color: "#333" }}>
+                  API: {API_URL}
+                </div>
+                <div
+                  onClick={loadShowtimes}
+                  style={{
+                    marginTop: "16px",
+                    padding: "12px 24px",
+                    backgroundColor: "#000000",
+                    color: "#ffffff",
+                    cursor: "pointer",
+                    display: "inline-block",
+                    borderRadius: "4px",
+                  }}
+                >
+                  Recharger
+                </div>
+              </div>
+            )}
+
+            {!loading && !error && showtimesData && selectedCinemas.length === 0 && (
+              <div
+                style={{
+                  padding: "40px",
+                  textAlign: "center",
+                  fontSize: "16px",
+                  color: "#000000",
+                }}
+              >
+                Aucun cinéma sélectionné.
+                <div
+                  onClick={() => setShowCinemaSelector(true)}
+                  style={{
+                    marginTop: "16px",
+                    padding: "12px 24px",
+                    backgroundColor: "#000000",
+                    color: "#ffffff",
+                    cursor: "pointer",
+                    display: "inline-block",
+                    borderRadius: "4px",
+                  }}
+                >
+                  Choisir des cinémas
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      };
+
+      const root = ReactDOM.createRoot(document.getElementById("root"));
+      root.render(<SeanceApp />);
+    </script>
+  </body>
+</html>
