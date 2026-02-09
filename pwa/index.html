@@ -345,6 +345,14 @@
           loadShowtimes();
         }, [selectedDate]);
 
+        useEffect(() => {
+          if (isDemoMode || loading || error || !showtimesData) return;
+          const nextDate = new Date(selectedDate);
+          nextDate.setDate(nextDate.getDate() + 1);
+          const nextDateStr = nextDate.toISOString().split("T")[0];
+          fetch(`${API_URL}/showtimes?date=${nextDateStr}`).catch(() => {});
+        }, [selectedDate, loading, error, showtimesData]);
+
         const loadShowtimes = async () => {
           setLoading(true);
           setError(null);
