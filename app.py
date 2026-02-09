@@ -9,6 +9,8 @@ import re
 import unicodedata
 from difflib import SequenceMatcher
 from functools import lru_cache
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 app = Flask(__name__)
 CORS(app)
@@ -42,6 +44,10 @@ SESSION = requests.Session()
 SESSION_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
 }
+
+# Simple in-memory cache for daily showtimes
+SHOWTIMES_CACHE = {}
+SHOWTIMES_TTL_SECONDS = 15 * 60  # 15 minutes
 
 def normalize_key(value):
     value = value or ""
@@ -416,14 +422,36 @@ def get_showtimes():
         target_date = datetime.now()
     
     date_str = target_date.strftime('%Y-%m-%d')
-    
+
+    # Cache hit
+    cached = SHOWTIMES_CACHE.get(date_str)
+    if cached:
+        cached_at, cached_data = cached
+        if time.time() - cached_at < SHOWTIMES_TTL_SECONDS:
+            return jsonify({
+                'date': date_str,
+                'showtimes': cached_data
+            })
+
     all_showtimes = {}
-    
-    for cinema_name, cinema_id in CINEMA_IDS.items():
-        logger.info(f"Scraping {cinema_name} ({cinema_id})...")
-        showtimes = scrape_allocine_showtimes(cinema_id, date_str)
-        all_showtimes[cinema_name] = showtimes
-    
+
+    # Parallel scraping for faster response
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        future_map = {
+            executor.submit(scrape_allocine_showtimes, cinema_id, date_str): cinema_name
+            for cinema_name, cinema_id in CINEMA_IDS.items()
+        }
+        for future in as_completed(future_map):
+            cinema_name = future_map[future]
+            try:
+                showtimes = future.result()
+            except Exception as exc:
+                logger.error(f"Erreur scraping {cinema_name}: {exc}")
+                showtimes = []
+            all_showtimes[cinema_name] = showtimes
+
+    SHOWTIMES_CACHE[date_str] = (time.time(), all_showtimes)
+
     return jsonify({
         'date': date_str,
         'showtimes': all_showtimes
