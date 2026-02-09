@@ -62,6 +62,65 @@
       .seances-director { font-weight: 600; margin: 0 0 12px 0; }
   .seances-duration { margin: 0 0 12px 0; }
       .seances-avec { margin: 0; }
+      .seances-loading-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 100svh;
+        background: #000000;
+        z-index: 2000;
+        overflow: hidden;
+        transition: height 600ms ease-in-out;
+      }
+      .seances-loading-logo {
+        position: absolute;
+        left: 14px;
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 24px;
+        font-weight: 400;
+        color: #c1ff00;
+        font-family: Helvetica, Arial, sans-serif;
+      }
+      .seances-loading-ellipsis {
+        position: absolute;
+        right: 20px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 3ch;
+        text-align: right;
+        font-size: 20px;
+        line-height: 20px;
+        color: #929299;
+        font-family: Helvetica, Arial, sans-serif;
+        letter-spacing: 1px;
+        white-space: pre;
+      }
+      .seances-secondary-overlay {
+        position: fixed;
+        top: 56px;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: #929299;
+        z-index: 1500;
+      }
+      .seances-header-ellipsis {
+        position: absolute;
+        right: 0px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 3ch;
+        text-align: right;
+        font-size: 20px;
+        line-height: 20px;
+        color: #929299;
+        font-family: Helvetica, Arial, sans-serif;
+        letter-spacing: 1px;
+        white-space: pre;
+        userSelect: "none";
+      }
 </style>
   </head>
   <body>
@@ -116,6 +175,11 @@
         const [loading, setLoading] = useState(true);
         const [error, setError] = useState(null);
         const [expandedFilm, setExpandedFilm] = useState(null);
+        const [loaderVisible, setLoaderVisible] = useState(true);
+        const [loaderExit, setLoaderExit] = useState(false);
+        const [ellipsisCount, setEllipsisCount] = useState(0);
+        const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+        const HEADER_HEIGHT = 56;
 
         const getApiUrl = () => {
           const params = new URLSearchParams(window.location.search);
@@ -151,6 +215,38 @@
         ]);
 
         const [allCinemas, setAllCinemas] = useState([]);
+
+        const isInitialLoading = loading && !hasLoadedOnce;
+        const isSecondaryLoading = loading && hasLoadedOnce;
+
+        useEffect(() => {
+          if (isInitialLoading) {
+            setLoaderVisible(true);
+            setLoaderExit(false);
+            return;
+          }
+          if (loaderVisible) {
+            setLoaderExit(true);
+            const timer = setTimeout(() => {
+              setLoaderVisible(false);
+            }, 650);
+            return () => clearTimeout(timer);
+          }
+        }, [isInitialLoading, loaderVisible]);
+
+        useEffect(() => {
+          if (!loaderVisible && !isSecondaryLoading) return;
+          const id = setInterval(() => {
+            setEllipsisCount((count) => (count + 1) % 4);
+          }, 350);
+          return () => clearInterval(id);
+        }, [loaderVisible, isSecondaryLoading]);
+
+        useEffect(() => {
+          const bg = loaderVisible ? "#000000" : "#929299";
+          document.documentElement.style.background = bg;
+          document.body.style.background = bg;
+        }, [loaderVisible]);
 
         useEffect(() => {
           if (isDemoMode) {
@@ -237,6 +333,7 @@
             };
             setShowtimesData(demoData);
             setLoading(false);
+            setHasLoadedOnce(true);
             setError(null);
             return;
           }
@@ -253,6 +350,7 @@
             const data = await response.json();
             setShowtimesData(data.showtimes);
             setLoading(false);
+            setHasLoadedOnce(true);
           } catch (err) {
             setError("Impossible de charger les horaires");
             setLoading(false);
@@ -428,24 +526,30 @@
                 >
                   {formatDate(selectedDate)}
                 </div>
-                <div
-                  style={{
-                    position: "absolute",
-                    right: "0px",
-                    top: "50%",
-                    transform: "translateY(-50%)",
-                    width: "20px",
-                    textAlign: "right",
-                    fontSize: "20px",
-                    lineHeight: "20px",
-                    color: "#929299",
-                    cursor: "pointer",
-                    userSelect: "none",
-                  }}
-                  onClick={() => setShowCinemaSelector(true)}
-                >
-                  +
-                </div>
+                {!isSecondaryLoading ? (
+                  <div
+                    style={{
+                      position: "absolute",
+                      right: "0px",
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      width: "20px",
+                      textAlign: "right",
+                      fontSize: "20px",
+                      lineHeight: "20px",
+                      color: "#929299",
+                      cursor: "pointer",
+                      userSelect: "none",
+                    }}
+                    onClick={() => setShowCinemaSelector(true)}
+                  >
+                    +
+                  </div>
+                ) : (
+                  <div className="seances-header-ellipsis">
+                    {["   ", ".  ", ".. ", "..."][ellipsisCount]}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -490,29 +594,24 @@
             )}
 
             {loading && (
+              <></>
+            )}
+
+            {loaderVisible && (
               <div
+                className="seances-loading-overlay"
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  minHeight: "60vh",
-                  paddingTop: "24px",
+                  height: loaderExit ? `${HEADER_HEIGHT}px` : "100svh",
                 }}
               >
-                <div className="seances-loader" aria-label="Chargement">
-                  <span className="seances-dot" style={{ top: "4px", left: "31px", animationDelay: "0s" }} />
-                  <span className="seances-dot" style={{ top: "9px", left: "46px", animationDelay: "0.11s" }} />
-                  <span className="seances-dot" style={{ top: "22px", left: "56px", animationDelay: "0.22s" }} />
-                  <span className="seances-dot" style={{ top: "38px", left: "56px", animationDelay: "0.33s" }} />
-                  <span className="seances-dot" style={{ top: "51px", left: "46px", animationDelay: "0.44s" }} />
-                  <span className="seances-dot" style={{ top: "56px", left: "31px", animationDelay: "0.55s" }} />
-                  <span className="seances-dot" style={{ top: "51px", left: "16px", animationDelay: "0.66s" }} />
-                  <span className="seances-dot" style={{ top: "38px", left: "6px", animationDelay: "0.77s" }} />
-                  <span className="seances-dot" style={{ top: "22px", left: "6px", animationDelay: "0.88s" }} />
-                  <span className="seances-dot" style={{ top: "9px", left: "16px", animationDelay: "0.99s" }} />
+                <div className="seances-loading-logo">Séance(s)</div>
+                <div className="seances-loading-ellipsis">
+                  {["   ", ".  ", ".. ", "..."][ellipsisCount]}
                 </div>
               </div>
             )}
+
+            {isSecondaryLoading && <div className="seances-secondary-overlay" />}
 
             {error && (
               <div
@@ -578,6 +677,12 @@
                     {films.map((film, filmIdx) => {
                       const filmKey = `${cinema}-${filmIdx}`;
                       const isExpanded = expandedFilm === filmKey;
+                      const compactBottomPadding =
+                        !isExpanded && film.showtimes && film.showtimes.length <= 1
+                          ? "8px"
+                          : isExpanded
+                          ? "0"
+                          : "14px";
                       return (
                         <div
                           key={filmIdx}
@@ -585,7 +690,7 @@
                             backgroundColor: "#929299",
                             borderBottom: "1px solid #000000",
                             padding: "14px",
-                            paddingBottom: isExpanded ? "0" : "14px",
+                            paddingBottom: compactBottomPadding,
                             position: "relative",
                             cursor: "pointer",
                           }}
