@@ -182,6 +182,7 @@
         const [expandedFilm, setExpandedFilm] = useState(null);
         const [loaderVisible, setLoaderVisible] = useState(true);
         const [loaderExit, setLoaderExit] = useState(false);
+        const [forceSplash, setForceSplash] = useState(true);
         const [ellipsisCount, setEllipsisCount] = useState(0);
         const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
         const HEADER_HEIGHT = 56;
@@ -221,7 +222,7 @@
 
         const [allCinemas, setAllCinemas] = useState([]);
 
-        const isInitialLoading = loading && !hasLoadedOnce;
+        const isInitialLoading = forceSplash || (loading && !hasLoadedOnce);
         const isSecondaryLoading = loading && hasLoadedOnce;
 
         useEffect(() => {
@@ -238,6 +239,13 @@
             return () => clearTimeout(timer);
           }
         }, [isInitialLoading, loaderVisible]);
+
+        useEffect(() => {
+          const timer = setTimeout(() => {
+            setForceSplash(false);
+          }, 1000);
+          return () => clearTimeout(timer);
+        }, []);
 
         useEffect(() => {
           if (!loaderVisible && !isSecondaryLoading) return;
