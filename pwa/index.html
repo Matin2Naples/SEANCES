@@ -63,8 +63,8 @@
         text-overflow: ellipsis;
         white-space: nowrap;
       }
-      .seances-title { margin: 0; }
-      .seances-director { font-weight: 600; margin: 0 0 12px 0; }
+      .seances-title { margin: 0; font-weight: 600; }
+      .seances-director { font-weight: 400; margin: 0 0 12px 0; }
   .seances-duration { margin: 0 0 12px 0; }
       .seances-avec { margin: 0; }
       .seances-loading-overlay {
@@ -760,7 +760,7 @@
                                       }}
                                     >
                                       <span style={{ fontWeight: "600" }}>{time.start}</span>
-                                      <span> (→ {time.end})</span>
+                                      <span>{"\u00a0"}(→ {time.end})</span>
                                     </div>
                                   ))}
                                 </div>
