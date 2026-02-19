@@ -256,6 +256,13 @@
         }, [loaderVisible, isSecondaryLoading]);
 
         useEffect(() => {
+          if (!showCinemaSelector) return;
+          window.scrollTo(0, 0);
+          document.documentElement.scrollTop = 0;
+          document.body.scrollTop = 0;
+        }, [showCinemaSelector]);
+
+        useEffect(() => {
           const bg = loaderVisible ? "#000000" : "#929299";
           document.documentElement.style.background = bg;
           document.body.style.background = bg;
