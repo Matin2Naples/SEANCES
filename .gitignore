@@ -5,3 +5,8 @@ __pycache__/
 *.save
 allocine_page.html
 first_movie_html.html
+
+# Local cache DB
+seances_cache.db
+seances_cache.db-shm
+seances_cache.db-wal

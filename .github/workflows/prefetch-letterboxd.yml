@@ -1,0 +1,30 @@
+name: Prefetch Letterboxd Ratings
+
+on:
+  schedule:
+    # Daily at 02:10 UTC (quiet traffic window)
+    - cron: "10 2 * * *"
+  workflow_dispatch:
+
+jobs:
+  prefetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compute Paris date
+        id: date
+        run: echo "target_date=$(TZ=Europe/Paris date +%F)" >> "$GITHUB_OUTPUT"
+
+      - name: Trigger prefetch endpoint
+        env:
+          PREFETCH_BASE_URL: ${{ secrets.PREFETCH_BASE_URL }}
+          PREFETCH_TOKEN: ${{ secrets.PREFETCH_TOKEN }}
+          TARGET_DATE: ${{ steps.date.outputs.target_date }}
+        run: |
+          if [ -z "$PREFETCH_BASE_URL" ] || [ -z "$PREFETCH_TOKEN" ]; then
+            echo "Missing PREFETCH_BASE_URL or PREFETCH_TOKEN GitHub secret"
+            exit 1
+          fi
+          URL="${PREFETCH_BASE_URL%/}/prefetch-letterboxd?date=${TARGET_DATE}&max_movies=120&sleep=0.8&token=${PREFETCH_TOKEN}"
+          echo "Calling $URL"
+          curl -fsS "$URL"
+

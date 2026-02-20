@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import logging
 import os
 import re
+import sqlite3
 import unicodedata
 from difflib import SequenceMatcher
 from functools import lru_cache
@@ -21,6 +22,10 @@ logger = logging.getLogger(__name__)
 # Clé API TMDB
 TMDB_API_KEY = os.getenv('TMDB_API_KEY', '8d8890d0c3bb35e59b72e11b119e951f')
 TMDB_BASE_URL = 'https://api.themoviedb.org/3'
+LETTERBOXD_BASE_URL = 'https://letterboxd.com'
+ENABLE_LIVE_LETTERBOXD = os.getenv('ENABLE_LIVE_LETTERBOXD', '0') in ('1', 'true', 'True')
+PREFETCH_TOKEN = os.getenv('PREFETCH_TOKEN', '')
+DB_PATH = os.path.join(os.path.dirname(__file__), 'seances_cache.db')
 
 # IDs des cinémas Allociné pour Paris (ordre préféré)
 CINEMA_IDS = {
@@ -48,6 +53,70 @@ SESSION_HEADERS = {
 # Simple in-memory cache for daily showtimes
 SHOWTIMES_CACHE = {}
 SHOWTIMES_TTL_SECONDS = 15 * 60  # 15 minutes
+LETTERBOXD_CACHE = {}
+LETTERBOXD_TTL_SECONDS = 24 * 60 * 60  # 24 hours
+LETTERBOXD_BLOCKED_UNTIL = 0
+LETTERBOXD_403_LOGGED = False
+
+def _db_connect():
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
+
+def init_cache_db():
+    conn = _db_connect()
+    try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS letterboxd_ratings (
+                tmdb_id INTEGER PRIMARY KEY,
+                rating REAL,
+                letterboxd_url TEXT,
+                updated_at INTEGER NOT NULL
+            )
+        """)
+        conn.commit()
+    finally:
+        conn.close()
+
+def get_cached_letterboxd(tmdb_id, max_age_seconds=LETTERBOXD_TTL_SECONDS):
+    if not tmdb_id:
+        return None, None
+    conn = _db_connect()
+    try:
+        row = conn.execute(
+            "SELECT rating, letterboxd_url, updated_at FROM letterboxd_ratings WHERE tmdb_id = ?",
+            (tmdb_id,)
+        ).fetchone()
+        if not row:
+            return None, None
+        rating, url, updated_at = row
+        if time.time() - (updated_at or 0) > max_age_seconds:
+            return None, url
+        return rating, url
+    finally:
+        conn.close()
+
+def save_cached_letterboxd(tmdb_id, rating, letterboxd_url):
+    if not tmdb_id:
+        return
+    conn = _db_connect()
+    try:
+        conn.execute(
+            """
+            INSERT INTO letterboxd_ratings (tmdb_id, rating, letterboxd_url, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(tmdb_id) DO UPDATE SET
+                rating = excluded.rating,
+                letterboxd_url = excluded.letterboxd_url,
+                updated_at = excluded.updated_at
+            """,
+            (tmdb_id, rating, letterboxd_url, int(time.time()))
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+init_cache_db()
 
 def normalize_key(value):
     value = value or ""
@@ -117,6 +186,93 @@ def normalize_title(title):
     clean_title = re.sub(r'\s*-\s*.*$', '', clean_title)
     clean_title = re.sub(r'\s+', ' ', clean_title).strip()
     return clean_title
+
+def fetch_letterboxd_rating_by_tmdb_id(tmdb_id, force_refresh=False):
+    """Récupère la note Letterboxd via l'ID TMDB."""
+    global LETTERBOXD_BLOCKED_UNTIL, LETTERBOXD_403_LOGGED
+    if not tmdb_id:
+        return None, None
+
+    if not force_refresh:
+        db_rating, db_url = get_cached_letterboxd(tmdb_id)
+        if db_rating is not None or db_url:
+            return db_rating, db_url
+
+    # If Letterboxd is currently blocking requests, skip fetch attempts.
+    if time.time() < LETTERBOXD_BLOCKED_UNTIL:
+        return None, f"{LETTERBOXD_BASE_URL}/tmdb/{tmdb_id}"
+
+    now = time.time()
+    cached = LETTERBOXD_CACHE.get(tmdb_id)
+    if cached and not force_refresh:
+        cached_at, cached_value = cached
+        if now - cached_at < LETTERBOXD_TTL_SECONDS:
+            return cached_value
+
+    url = f"{LETTERBOXD_BASE_URL}/tmdb/{tmdb_id}"
+    try:
+        headers = {
+            **SESSION_HEADERS,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Referer': 'https://letterboxd.com/',
+        }
+        response = SESSION.get(url, headers=headers, timeout=6, allow_redirects=True)
+        response.raise_for_status()
+        final_url = response.url or url
+        html = response.text
+
+        rating = None
+        soup = BeautifulSoup(html, 'html.parser')
+
+        # 1) JSON-LD
+        for script in soup.find_all('script', {'type': 'application/ld+json'}):
+            text = script.string or script.get_text() or ""
+            if not text:
+                continue
+            m = re.search(r'"ratingValue"\s*:\s*"?(?P<v>\d(?:\.\d)?)"?', text)
+            if m:
+                rating = float(m.group('v'))
+                break
+
+        # 2) fallback regex patterns
+        if rating is None:
+            patterns = [
+                r'data-average-rating="(?P<v>\d(?:\.\d)?)"',
+                r'"averageRating"\s*:\s*"?(?P<v>\d(?:\.\d)?)"?',
+                r'average-rating[^>]*>\s*(?P<v>\d(?:\.\d)?)\s*<',
+            ]
+            for pattern in patterns:
+                m = re.search(pattern, html)
+                if m:
+                    rating = float(m.group('v'))
+                    break
+
+        # Clamp to Letterboxd scale
+        if rating is not None:
+            rating = max(0.0, min(5.0, round(rating, 1)))
+
+        result = (rating, final_url)
+        save_cached_letterboxd(tmdb_id, rating, final_url)
+        LETTERBOXD_CACHE[tmdb_id] = (now, result)
+        return result
+    except requests.HTTPError as e:
+        status = e.response.status_code if e.response is not None else None
+        if status == 403:
+            LETTERBOXD_BLOCKED_UNTIL = time.time() + (6 * 60 * 60)  # cooldown 6h
+            if not LETTERBOXD_403_LOGGED:
+                logger.warning("Letterboxd bloque les requêtes (403). Fallback TMDB activé pendant 6h.")
+                LETTERBOXD_403_LOGGED = True
+        else:
+            logger.warning(f"Erreur Letterboxd pour TMDB {tmdb_id}: {e}")
+        result = (None, url)
+        LETTERBOXD_CACHE[tmdb_id] = (now, result)
+        return result
+    except Exception as e:
+        logger.warning(f"Erreur Letterboxd pour TMDB {tmdb_id}: {e}")
+        result = (None, url)
+        LETTERBOXD_CACHE[tmdb_id] = (now, result)
+        return result
 
 @lru_cache(maxsize=512)
 def search_movie_tmdb(title, year_hint=None):
@@ -197,8 +353,15 @@ def search_movie_tmdb(title, year_hint=None):
             genres = []
             if 'genres' in details:
                 genres = [genre['name'] for genre in details['genres'][:2]]
+
+            letterboxd_rating, letterboxd_url = get_cached_letterboxd(movie_id)
+            if ENABLE_LIVE_LETTERBOXD and letterboxd_rating is None:
+                letterboxd_rating, letterboxd_url = fetch_letterboxd_rating_by_tmdb_id(movie_id)
+            if not letterboxd_url:
+                letterboxd_url = f"{LETTERBOXD_BASE_URL}/tmdb/{movie_id}"
             
             return {
+                'tmdb_id': movie_id,
                 'duration': duration,
                 'duration_minutes': runtime,
                 'director': director,
@@ -207,6 +370,8 @@ def search_movie_tmdb(title, year_hint=None):
                 'release_date': details.get('release_date', ''),
                 'overview': details.get('overview', ''),
                 'vote_average': details.get('vote_average', 0),
+                'letterboxd_rating': letterboxd_rating,
+                'letterboxd_url': letterboxd_url,
                 'genres': genres
             }
         
@@ -365,6 +530,7 @@ def scrape_allocine_showtimes(cinema_id, date_str):
         if tmdb_data:
             enriched_movies.append({
                 'title': title,
+                'tmdb_id': tmdb_data.get('tmdb_id'),
                 'director': tmdb_data['director'],
                 'duration': tmdb_data['duration'],
                 'showtimes': sorted(showtimes, key=lambda x: x['start']),
@@ -373,11 +539,14 @@ def scrape_allocine_showtimes(cinema_id, date_str):
                 'release_date': tmdb_data['release_date'],
                 'overview': tmdb_data['overview'],
                 'vote_average': tmdb_data['vote_average'],
+                'letterboxd_rating': tmdb_data.get('letterboxd_rating'),
+                'letterboxd_url': tmdb_data.get('letterboxd_url'),
                 'genres': tmdb_data['genres']
             })
         else:
             enriched_movies.append({
                 'title': title,
+                'tmdb_id': None,
                 'director': 'Réalisateur inconnu',
                 'duration': '2h00',
                 'showtimes': sorted(showtimes, key=lambda x: x['start']),
@@ -386,6 +555,8 @@ def scrape_allocine_showtimes(cinema_id, date_str):
                 'release_date': '',
                 'overview': '',
                 'vote_average': 0,
+                'letterboxd_rating': None,
+                'letterboxd_url': None,
                 'genres': []
             })
 
@@ -398,7 +569,8 @@ def home():
         'endpoints': {
             '/cinemas': 'Liste des cinémas',
             '/showtimes?date=YYYY-MM-DD': 'Horaires (scraping Allociné + TMDB)',
-            '/test-cinema/<cinema_name>': 'Tester un seul cinéma'
+            '/test-cinema/<cinema_name>': 'Tester un seul cinéma',
+            '/prefetch-letterboxd?date=YYYY-MM-DD&token=...': 'Batch de cache Letterboxd'
         }
     })
 
@@ -470,6 +642,69 @@ def test_cinema(cinema_name):
         'cinema': cinema_name,
         'cinema_id': cinema_id,
         'showtimes': showtimes
+    })
+
+@app.route('/prefetch-letterboxd')
+def prefetch_letterboxd():
+    """Préchauffe/calcule les notes Letterboxd pour une date (batch admin)."""
+    token = request.args.get('token', '')
+    if PREFETCH_TOKEN and token != PREFETCH_TOKEN:
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    date_param = request.args.get('date') or datetime.now().strftime('%Y-%m-%d')
+    max_movies = int(request.args.get('max_movies', 80))
+    sleep_seconds = float(request.args.get('sleep', 0.8))
+
+    titles = []
+    for _, cinema_id in CINEMA_IDS.items():
+        movies = fetch_allocine_showtimes_json(cinema_id, date_param) or []
+        for movie in movies:
+            title = (movie or {}).get('title')
+            if title:
+                titles.append(title)
+
+    unique_titles = []
+    seen = set()
+    for t in titles:
+        key = normalize_key(t)
+        if key and key not in seen:
+            seen.add(key)
+            unique_titles.append(t)
+        if len(unique_titles) >= max_movies:
+            break
+
+    processed = 0
+    fetched = 0
+    cached = 0
+    blocked_or_missing = 0
+
+    for title in unique_titles:
+        tmdb_data = search_movie_tmdb(title)
+        tmdb_id = tmdb_data.get('tmdb_id') if tmdb_data else None
+        if not tmdb_id:
+            continue
+
+        processed += 1
+        rating, url = get_cached_letterboxd(tmdb_id)
+        if rating is not None or url:
+            cached += 1
+            continue
+
+        rating, _ = fetch_letterboxd_rating_by_tmdb_id(tmdb_id, force_refresh=True)
+        if rating is not None:
+            fetched += 1
+        else:
+            blocked_or_missing += 1
+
+        time.sleep(max(0.0, sleep_seconds))
+
+    return jsonify({
+        'date': date_param,
+        'processed_tmdb_ids': processed,
+        'from_cache': cached,
+        'fetched_letterboxd': fetched,
+        'blocked_or_missing': blocked_or_missing,
+        'enable_live_letterboxd': ENABLE_LIVE_LETTERBOXD,
     })
 
 if __name__ == '__main__':
