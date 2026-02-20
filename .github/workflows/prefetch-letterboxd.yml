@@ -26,14 +26,23 @@ jobs:
           fi
           URL="${PREFETCH_BASE_URL%/}/prefetch-letterboxd"
           echo "Calling ${URL} for date ${TARGET_DATE}"
-          HTTP_CODE=$(curl -sS -o /tmp/prefetch.json -w "%{http_code}" \
-            --get "$URL" \
-            --data-urlencode "date=${TARGET_DATE}" \
-            --data-urlencode "max_movies=120" \
-            --data-urlencode "sleep=0.8" \
-            --data-urlencode "token=${PREFETCH_TOKEN}")
-          echo "HTTP ${HTTP_CODE}"
-          cat /tmp/prefetch.json
-          if [ "${HTTP_CODE}" -lt 200 ] || [ "${HTTP_CODE}" -ge 300 ]; then
+          # Free Render can be cold/asleep; do small batch + retry for wake-up windows.
+          SUCCESS=0
+          for ATTEMPT in 1 2 3; do
+            HTTP_CODE=$(curl -sS -o /tmp/prefetch.json -w "%{http_code}" \
+              --get "$URL" \
+              --data-urlencode "date=${TARGET_DATE}" \
+              --data-urlencode "max_movies=25" \
+              --data-urlencode "sleep=0.15" \
+              --data-urlencode "token=${PREFETCH_TOKEN}")
+            echo "Attempt ${ATTEMPT} -> HTTP ${HTTP_CODE}"
+            cat /tmp/prefetch.json || true
+            if [ "${HTTP_CODE}" -ge 200 ] && [ "${HTTP_CODE}" -lt 300 ]; then
+              SUCCESS=1
+              break
+            fi
+            sleep 20
+          done
+          if [ "${SUCCESS}" -ne 1 ]; then
             exit 1
           fi
