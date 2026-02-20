@@ -24,7 +24,16 @@ jobs:
             echo "Missing PREFETCH_BASE_URL or PREFETCH_TOKEN GitHub secret"
             exit 1
           fi
-          URL="${PREFETCH_BASE_URL%/}/prefetch-letterboxd?date=${TARGET_DATE}&max_movies=120&sleep=0.8&token=${PREFETCH_TOKEN}"
-          echo "Calling $URL"
-          curl -fsS "$URL"
-
+          URL="${PREFETCH_BASE_URL%/}/prefetch-letterboxd"
+          echo "Calling ${URL} for date ${TARGET_DATE}"
+          HTTP_CODE=$(curl -sS -o /tmp/prefetch.json -w "%{http_code}" \
+            --get "$URL" \
+            --data-urlencode "date=${TARGET_DATE}" \
+            --data-urlencode "max_movies=120" \
+            --data-urlencode "sleep=0.8" \
+            --data-urlencode "token=${PREFETCH_TOKEN}")
+          echo "HTTP ${HTTP_CODE}"
+          cat /tmp/prefetch.json
+          if [ "${HTTP_CODE}" -lt 200 ] || [ "${HTTP_CODE}" -ge 300 ]; then
+            exit 1
+          fi
