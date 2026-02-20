@@ -653,6 +653,7 @@ def prefetch_letterboxd():
 
     date_param = request.args.get('date') or datetime.now().strftime('%Y-%m-%d')
     max_movies = int(request.args.get('max_movies', 80))
+    offset = max(0, int(request.args.get('offset', 0)))
     sleep_seconds = float(request.args.get('sleep', 0.8))
 
     titles = []
@@ -670,15 +671,16 @@ def prefetch_letterboxd():
         if key and key not in seen:
             seen.add(key)
             unique_titles.append(t)
-        if len(unique_titles) >= max_movies:
-            break
+
+    batch_titles = unique_titles[offset:offset + max_movies]
+    has_more = (offset + len(batch_titles)) < len(unique_titles)
 
     processed = 0
     fetched = 0
     cached = 0
     blocked_or_missing = 0
 
-    for title in unique_titles:
+    for title in batch_titles:
         tmdb_data = search_movie_tmdb(title)
         tmdb_id = tmdb_data.get('tmdb_id') if tmdb_data else None
         if not tmdb_id:
@@ -686,7 +688,7 @@ def prefetch_letterboxd():
 
         processed += 1
         rating, url = get_cached_letterboxd(tmdb_id)
-        if rating is not None or url:
+        if rating is not None:
             cached += 1
             continue
 
@@ -700,6 +702,10 @@ def prefetch_letterboxd():
 
     return jsonify({
         'date': date_param,
+        'offset': offset,
+        'batch_size': len(batch_titles),
+        'total_unique_titles': len(unique_titles),
+        'has_more': has_more,
         'processed_tmdb_ids': processed,
         'from_cache': cached,
         'fetched_letterboxd': fetched,

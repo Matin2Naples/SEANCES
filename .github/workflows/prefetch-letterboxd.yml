@@ -2,47 +2,83 @@ name: Prefetch Letterboxd Ratings
 
 on:
   schedule:
-    # Daily at 02:10 UTC (quiet traffic window)
-    - cron: "10 2 * * *"
+    # Daily near midnight Paris time (~00:20 CET / ~01:20 CEST)
+    - cron: "20 23 * * *"
   workflow_dispatch:
 
 jobs:
   prefetch:
     runs-on: ubuntu-latest
     steps:
-      - name: Compute Paris date
-        id: date
-        run: echo "target_date=$(TZ=Europe/Paris date +%F)" >> "$GITHUB_OUTPUT"
-
-      - name: Trigger prefetch endpoint
+      - name: Trigger weekly prefetch batches
         env:
           PREFETCH_BASE_URL: ${{ secrets.PREFETCH_BASE_URL }}
           PREFETCH_TOKEN: ${{ secrets.PREFETCH_TOKEN }}
-          TARGET_DATE: ${{ steps.date.outputs.target_date }}
         run: |
-          if [ -z "$PREFETCH_BASE_URL" ] || [ -z "$PREFETCH_TOKEN" ]; then
+          set -euo pipefail
+
+          if [ -z "${PREFETCH_BASE_URL:-}" ] || [ -z "${PREFETCH_TOKEN:-}" ]; then
             echo "Missing PREFETCH_BASE_URL or PREFETCH_TOKEN GitHub secret"
             exit 1
           fi
+
           URL="${PREFETCH_BASE_URL%/}/prefetch-letterboxd"
-          echo "Calling ${URL} for date ${TARGET_DATE}"
-          # Free Render can be cold/asleep; do small batch + retry for wake-up windows.
-          SUCCESS=0
-          for ATTEMPT in 1 2 3; do
-            HTTP_CODE=$(curl -sS -o /tmp/prefetch.json -w "%{http_code}" \
-              --get "$URL" \
-              --data-urlencode "date=${TARGET_DATE}" \
-              --data-urlencode "max_movies=25" \
-              --data-urlencode "sleep=0.15" \
-              --data-urlencode "token=${PREFETCH_TOKEN}")
-            echo "Attempt ${ATTEMPT} -> HTTP ${HTTP_CODE}"
-            cat /tmp/prefetch.json || true
-            if [ "${HTTP_CODE}" -ge 200 ] && [ "${HTTP_CODE}" -lt 300 ]; then
-              SUCCESS=1
-              break
+          BATCH_SIZE=25
+          MAX_PAGES_PER_DAY=10
+
+          call_batch() {
+            local date="$1"
+            local offset="$2"
+            local success=0
+            local code=""
+            for attempt in 1 2 3; do
+              code=$(curl -sS -o /tmp/prefetch.json -w "%{http_code}" \
+                --get "$URL" \
+                --data-urlencode "date=${date}" \
+                --data-urlencode "offset=${offset}" \
+                --data-urlencode "max_movies=${BATCH_SIZE}" \
+                --data-urlencode "sleep=0.15" \
+                --data-urlencode "token=${PREFETCH_TOKEN}")
+              echo "Date ${date}, offset ${offset}, attempt ${attempt} -> HTTP ${code}"
+              cat /tmp/prefetch.json || true
+              if [ "${code}" -ge 200 ] && [ "${code}" -lt 300 ]; then
+                success=1
+                break
+              fi
+              sleep 20
+            done
+            if [ "${success}" -ne 1 ]; then
+              return 1
             fi
-            sleep 20
+            return 0
+          }
+
+          for day_offset in 0 1 2 3 4 5 6; do
+            target_date=$(TZ=Europe/Paris date -d "+${day_offset} day" +%F)
+            echo "=== Prefetch ${target_date} ==="
+
+            offset=0
+            page=1
+            while [ "${page}" -le "${MAX_PAGES_PER_DAY}" ]; do
+              call_batch "${target_date}" "${offset}"
+
+              has_more=$(python3 - <<'PY'
+import json
+try:
+    with open('/tmp/prefetch.json', 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    print("1" if data.get("has_more") else "0")
+except Exception:
+    print("0")
+PY
+)
+              if [ "${has_more}" != "1" ]; then
+                break
+              fi
+
+              offset=$((offset + BATCH_SIZE))
+              page=$((page + 1))
+              sleep 2
+            done
           done
-          if [ "${SUCCESS}" -ne 1 ]; then
-            exit 1
-          fi
+
