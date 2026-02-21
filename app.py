@@ -125,6 +125,48 @@ def normalize_title(title):
     clean_title = re.sub(r'\s+', ' ', clean_title).strip()
     return clean_title
 
+def pick_best_poster_path(details, movie_candidate=None):
+    """Choisit une affiche en privilégiant la langue originale du film."""
+    if not isinstance(details, dict):
+        return None
+
+    posters = details.get('images', {}).get('posters', []) or []
+    if not posters:
+        return details.get('poster_path')
+
+    original_lang = details.get('original_language') or (movie_candidate or {}).get('original_language')
+
+    def poster_quality(p):
+        # Favoriser affiches "officielles" mieux notées puis plus larges.
+        return (
+            p.get('vote_count', 0),
+            p.get('vote_average', 0),
+            p.get('width', 0),
+        )
+
+    # 1) Langue originale
+    if original_lang:
+        same_lang = [p for p in posters if p.get('iso_639_1') == original_lang and p.get('file_path')]
+        if same_lang:
+            return max(same_lang, key=poster_quality).get('file_path')
+
+    # 2) Anglais
+    en = [p for p in posters if p.get('iso_639_1') == 'en' and p.get('file_path')]
+    if en:
+        return max(en, key=poster_quality).get('file_path')
+
+    # 3) Français
+    fr = [p for p in posters if p.get('iso_639_1') == 'fr' and p.get('file_path')]
+    if fr:
+        return max(fr, key=poster_quality).get('file_path')
+
+    # 4) Sans langue (souvent textless) en dernier recours
+    no_lang = [p for p in posters if p.get('iso_639_1') is None and p.get('file_path')]
+    if no_lang:
+        return max(no_lang, key=poster_quality).get('file_path')
+
+    return details.get('poster_path')
+
 @lru_cache(maxsize=512)
 def search_movie_tmdb(title, year_hint=None):
     """Recherche un film sur TMDB et retourne ses infos"""
@@ -160,7 +202,8 @@ def search_movie_tmdb(title, year_hint=None):
                 'api_key': TMDB_API_KEY,
                 'language': 'fr-FR',
                 'append_to_response': 'credits,images',
-                            }
+                'include_image_language': f"{movie.get('original_language')},en,fr,null"
+            }
             
             details_response = SESSION.get(details_url, params=details_params, timeout=6, headers=SESSION_HEADERS)
             details_response.raise_for_status()
@@ -183,21 +226,8 @@ def search_movie_tmdb(title, year_hint=None):
             if 'credits' in details and 'cast' in details['credits']:
                 actors = [actor['name'] for actor in details['credits']['cast'][:5]]
             
-            # Affiche (préférer la langue originale, puis le français)
-            poster_path = None
-            posters = details.get('images', {}).get('posters', []) if isinstance(details, dict) else []
-            original_lang = details.get('original_language') if isinstance(details, dict) else None
-            preferred = []
-            if original_lang:
-                preferred.extend([p for p in posters if p.get('iso_639_1') == original_lang])
-            preferred.extend([p for p in posters if p.get('iso_639_1') == 'fr'])
-            preferred.extend([p for p in posters if p.get('iso_639_1') == 'en'])
-            # Last resort: no-language posters
-            preferred.extend([p for p in posters if p.get('iso_639_1') is None and p.get('width', 0) >= 300 and p.get('height', 0) >= 450])
-            if preferred:
-                poster_path = preferred[0].get('file_path')
-            if not poster_path:
-                poster_path = details.get('poster_path')
+            # Affiche (langue originale prioritaire)
+            poster_path = pick_best_poster_path(details, movie)
             poster_url = f"https://image.tmdb.org/t/p/w500{poster_path}" if poster_path else None
             
             # Genres (maximum 2)
