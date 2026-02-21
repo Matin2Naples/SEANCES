@@ -99,8 +99,13 @@ def pick_best_tmdb_match(results, clean_title, year_hint=None):
             try:
                 y = int(year_hint)
                 ry = (cand.get('release_date') or '')[:4]
-                if ry.isdigit() and abs(int(ry) - y) <= 1:
-                    score += 0.15
+                if ry.isdigit():
+                    year_delta = abs(int(ry) - y)
+                    if year_delta <= 1:
+                        score += 0.15
+                    elif year_delta >= 6 and score < 0.95:
+                        # Reject clear year mismatches unless title match is near-perfect.
+                        continue
             except Exception:
                 pass
         if score > best_score:
@@ -114,7 +119,9 @@ def normalize_title(title):
     """Nettoyer un titre pour augmenter les chances de match TMDB."""
     clean_title = title.split(':')[0].strip()
     clean_title = re.sub(r'\s*\(.*?\)\s*', ' ', clean_title)
-    clean_title = re.sub(r'\s*-\s*.*$', '', clean_title)
+    # Only strip explicit subtitle suffixes like "Title - Subtitle".
+    # Do not truncate intrinsic hyphenated titles like "Punch-Drunk Love".
+    clean_title = re.sub(r'\s+-\s+.*$', '', clean_title)
     clean_title = re.sub(r'\s+', ' ', clean_title).strip()
     return clean_title
 
@@ -232,7 +239,9 @@ def fetch_allocine_showtimes_json(cinema_id, date_str):
             total_pages = int(pagination.get('totalPages', total_pages))
 
             for element in data.get('results', []):
-                title = element.get('movie', {}).get('title', 'Titre inconnu')
+                movie_data = element.get('movie', {}) or {}
+                title = movie_data.get('title', 'Titre inconnu')
+                production_year = movie_data.get('productionYear')
                 showtimes = []
                 for showtimes_key in element.get('showtimes', {}).keys():
                     for showtime in element.get('showtimes', {}).get(showtimes_key, []):
@@ -241,12 +250,16 @@ def fetch_allocine_showtimes_json(cinema_id, date_str):
                             showtimes.append(starts_at)
 
                 if showtimes:
-                    movies_map.setdefault(title, set()).update(showtimes)
+                    entry = movies_map.setdefault(title, {'showtimes': set(), 'year_hint': None})
+                    entry['showtimes'].update(showtimes)
+                    if entry['year_hint'] is None and production_year:
+                        entry['year_hint'] = production_year
 
             page += 1
 
         movies = []
-        for title, starts_at_set in movies_map.items():
+        for title, payload in movies_map.items():
+            starts_at_set = payload.get('showtimes', set())
             start_times = []
             for starts_at in starts_at_set:
                 try:
@@ -258,7 +271,8 @@ def fetch_allocine_showtimes_json(cinema_id, date_str):
             if start_times:
                 movies.append({
                     'title': title,
-                    'start_times': sorted(set(start_times))
+                    'start_times': sorted(set(start_times)),
+                    'year_hint': payload.get('year_hint')
                 })
 
         return movies
@@ -344,6 +358,7 @@ def scrape_allocine_showtimes(cinema_id, date_str):
     enriched_movies = []
     for movie in movies:
         title = movie.get('title', 'Titre inconnu')
+        year_hint = movie.get('year_hint')
         showtimes = movie.get('showtimes')
         if not showtimes:
             start_times = movie.get('start_times', [])
@@ -352,7 +367,7 @@ def scrape_allocine_showtimes(cinema_id, date_str):
         if not showtimes:
             continue
 
-        tmdb_data = search_movie_tmdb(title)
+        tmdb_data = search_movie_tmdb(title, year_hint)
         duration_minutes = 120
         if tmdb_data and tmdb_data.get('duration_minutes'):
             duration_minutes = tmdb_data['duration_minutes']
