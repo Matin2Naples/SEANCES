@@ -34,6 +34,7 @@ CINEMA_IDS = {
     'UGC Ciné Cité Les Halles': 'C0159',
     'UGC Gobelins': 'C0150',
     'UGC Ciné Cité Bercy': 'C0026',
+    'MK2 Beaubourg': 'C0050',
     'MK2 Quai de Seine': 'C0003',
     'MK2 Quai de Loire': 'C1621',
     'Le Grand Rex': 'C0065',
