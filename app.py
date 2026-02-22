@@ -236,11 +236,13 @@ def search_movie_tmdb(title, year_hint=None):
                 genres = [genre['name'] for genre in details['genres'][:2]]
 
             return {
+                'tmdb_id': movie_id,
                 'duration': duration,
                 'duration_minutes': runtime,
                 'director': director,
                 'actors': actors,
                 'poster_url': poster_url,
+                'letterboxd_url': f"https://letterboxd.com/tmdb/{movie_id}",
                 'release_date': details.get('release_date', ''),
                 'overview': details.get('overview', ''),
                 'vote_average': details.get('vote_average', 0),
@@ -415,6 +417,7 @@ def scrape_allocine_showtimes(cinema_id, date_str):
                 'showtimes': sorted(showtimes, key=lambda x: x['start']),
                 'actors': tmdb_data['actors'],
                 'poster_url': tmdb_data['poster_url'],
+                'letterboxd_url': tmdb_data.get('letterboxd_url'),
                 'release_date': tmdb_data['release_date'],
                 'overview': tmdb_data['overview'],
                 'vote_average': tmdb_data['vote_average'],
@@ -428,6 +431,7 @@ def scrape_allocine_showtimes(cinema_id, date_str):
                 'showtimes': sorted(showtimes, key=lambda x: x['start']),
                 'actors': [],
                 'poster_url': None,
+                'letterboxd_url': None,
                 'release_date': '',
                 'overview': '',
                 'vote_average': 0,

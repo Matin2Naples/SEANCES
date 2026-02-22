@@ -842,6 +842,35 @@
                             </div>
                           )}
 
+                          {isExpanded && film.letterboxd_url && (
+                            <a
+                              href={film.letterboxd_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{
+                                position: "absolute",
+                                left: "14px",
+                                bottom: "14px",
+                                display: "block",
+                                margin: 0,
+                                padding: 0,
+                                lineHeight: 0,
+                                zIndex: 2,
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <img
+                                src="letterboxd_logo.svg"
+                                alt="Letterboxd"
+                                style={{
+                                  width: "42px",
+                                  height: "auto",
+                                  display: "block",
+                                }}
+                              />
+                            </a>
+                          )}
+
                           <div
                             style={{
                               position: "absolute",
