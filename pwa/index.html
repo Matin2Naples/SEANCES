@@ -136,7 +136,7 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
     <script type="text/babel">
-      const { useState, useEffect } = React;
+      const { useState, useEffect, useRef } = React;
 
       const PlusIcon = ({ size = 20, color = "#000", style = {}, onClick }) => (
         <svg
@@ -205,8 +205,8 @@
         };
         const API_URL = getApiUrl();
         const isDemoMode = new URLSearchParams(window.location.search).get("demo") === "1";
-
-        const [selectedCinemas, setSelectedCinemas] = useState([
+        const PREFS_STORAGE_KEY = "seances_cinema_prefs_v1";
+        const DEFAULT_SELECTED_CINEMAS = [
           "Christine Cinéma Club",
           "Filmothèque du Quartier Latin",
           "La Cinémathèque Française",
@@ -219,9 +219,16 @@
           "Reflet Médicis",
           "Écoles Cinéma Club",
           "UGC Ciné Cité Les Halles",
-        ]);
+        ];
 
+        const [selectedCinemas, setSelectedCinemas] = useState(DEFAULT_SELECTED_CINEMAS);
         const [allCinemas, setAllCinemas] = useState([]);
+        const [draggedCinema, setDraggedCinema] = useState(null);
+        const [isReordering, setIsReordering] = useState(false);
+        const [grabbedCinema, setGrabbedCinema] = useState(null);
+        const touchDragFromRef = useRef(null);
+        const touchDragOverRef = useRef(null);
+        const [touchOverCinema, setTouchOverCinema] = useState(null);
 
         const isInitialLoading = forceSplash || (loading && !hasLoadedOnce);
         const isSecondaryLoading = loading && hasLoadedOnce;
@@ -284,16 +291,54 @@
             .then((res) => res.json())
             .then((data) => {
               const cinemas = data.cinemas || [];
-              setAllCinemas(cinemas);
-              setSelectedCinemas((prev) => {
-                const prevNormalized = new Set(prev.map(normalizeCinemaName));
-                return cinemas.filter((name) => prevNormalized.has(normalizeCinemaName(name)));
-              });
+              const byNorm = new Map(cinemas.map((name) => [normalizeCinemaName(name), name]));
+
+              let savedOrder = [];
+              let savedSelected = [];
+              try {
+                const raw = localStorage.getItem(PREFS_STORAGE_KEY);
+                if (raw) {
+                  const parsed = JSON.parse(raw);
+                  savedOrder = Array.isArray(parsed?.order) ? parsed.order : [];
+                  savedSelected = Array.isArray(parsed?.selected) ? parsed.selected : [];
+                }
+              } catch (_) {}
+
+              const normalizedSavedOrder = savedOrder
+                .map((name) => byNorm.get(normalizeCinemaName(name)))
+                .filter(Boolean);
+              const orderSeen = new Set(normalizedSavedOrder);
+              const orderedCinemas = [
+                ...normalizedSavedOrder,
+                ...cinemas.filter((name) => !orderSeen.has(name)),
+              ];
+
+              const normalizedSelected = (savedSelected.length > 0 ? savedSelected : DEFAULT_SELECTED_CINEMAS)
+                .map((name) => byNorm.get(normalizeCinemaName(name)))
+                .filter(Boolean);
+              const selectedSeen = new Set(normalizedSelected);
+              const finalSelected = orderedCinemas.filter((name) => selectedSeen.has(name));
+
+              setAllCinemas(orderedCinemas);
+              setSelectedCinemas(finalSelected);
             })
             .catch((err) => {
               console.error("Erreur chargement cinémas:", err);
             });
         }, []);
+
+        useEffect(() => {
+          if (!allCinemas.length) return;
+          try {
+            localStorage.setItem(
+              PREFS_STORAGE_KEY,
+              JSON.stringify({
+                order: allCinemas,
+                selected: selectedCinemas,
+              })
+            );
+          } catch (_) {}
+        }, [allCinemas, selectedCinemas]);
 
         useEffect(() => {
           if (isDemoMode) {
@@ -388,11 +433,24 @@
         };
 
         const toggleCinema = (cinema) => {
+          if (isReordering) return;
           if (selectedCinemas.includes(cinema)) {
             setSelectedCinemas(selectedCinemas.filter((c) => c !== cinema));
           } else {
             setSelectedCinemas([...selectedCinemas, cinema]);
           }
+        };
+        const moveCinema = (fromCinema, toCinema) => {
+          if (!fromCinema || !toCinema || fromCinema === toCinema) return;
+          setAllCinemas((prev) => {
+            const from = prev.indexOf(fromCinema);
+            const to = prev.indexOf(toCinema);
+            if (from < 0 || to < 0) return prev;
+            const next = [...prev];
+            const [moved] = next.splice(from, 1);
+            next.splice(to, 0, moved);
+            return next;
+          });
         };
 
         const getNextDays = () => {
@@ -437,6 +495,7 @@
             .replace(/[^a-z0-9\s]/g, "")
             .replace(/\s+/g, " ")
             .trim();
+        const orderedSelectedCinemas = allCinemas.filter((name) => selectedCinemas.includes(name));
 
         if (showCinemaSelector) {
           return (
@@ -445,6 +504,9 @@
                 fontFamily: "Helvetica, Arial, sans-serif",
                 backgroundColor: "#929299",
                 minHeight: "100vh",
+                userSelect: "none",
+                WebkitUserSelect: "none",
+                WebkitTouchCallout: "none",
               }}
             >
               <div
@@ -503,19 +565,116 @@
                 {allCinemas.map((cinema, idx) => (
                   <div
                     key={idx}
-                    onClick={() => toggleCinema(cinema)}
+                    draggable
+                    onDragStart={() => {
+                      setDraggedCinema(cinema);
+                      setGrabbedCinema(cinema);
+                    }}
+                    onDragEnd={() => {
+                      setDraggedCinema(null);
+                      setGrabbedCinema(null);
+                    }}
+                    onDragOver={(e) => e.preventDefault()}
+                    data-cinema-row="1"
+                    data-cinema-name={cinema}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        moveCinema(draggedCinema, cinema);
+                        setDraggedCinema(null);
+                        setGrabbedCinema(null);
+                      }}
+                      onClick={() => toggleCinema(cinema)}
                     style={{
-                padding: "14px",
+                      padding: "14px",
+                      paddingRight: "52px",
                       fontSize: "24px",
                       fontWeight: "400",
                       color: "#000000",
                       backgroundColor: selectedCinemas.includes(cinema) ? "#c1ff00" : "#929299",
                       borderBottom: "1px solid #000000",
+                      borderTop:
+                        isReordering && touchOverCinema === cinema
+                          ? "3px solid #000000"
+                          : "0px solid transparent",
                       cursor: "pointer",
                       transition: "background-color 0.2s",
+                      position: "relative",
+                      userSelect: "none",
+                      WebkitUserSelect: "none",
+                      WebkitTouchCallout: "none",
                     }}
                   >
-                    {cinema}
+                    <span
+                      style={{
+                        display: "inline-block",
+                        transform: grabbedCinema === cinema ? "translateX(14px)" : "translateX(0px)",
+                        transition: "transform 120ms ease",
+                      }}
+                    >
+                      {cinema}
+                    </span>
+                    <span
+                      style={{
+                        position: "absolute",
+                        right: "6px",
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        width: "32px",
+                        height: "32px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        textAlign: "right",
+                        fontSize: "24px",
+                        lineHeight: "24px",
+                        color: "#3b3b3f",
+                        letterSpacing: "0",
+                        userSelect: "none",
+                        touchAction: "none",
+                        cursor: "grab",
+                      }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onTouchStart={(e) => {
+                        e.stopPropagation();
+                        touchDragFromRef.current = cinema;
+                        touchDragOverRef.current = cinema;
+                        setGrabbedCinema(cinema);
+                        setTouchOverCinema(cinema);
+                        setIsReordering(true);
+                      }}
+                      onTouchMove={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const touch = e.touches && e.touches[0];
+                        if (!touch) return;
+                        const el = document.elementFromPoint(touch.clientX, touch.clientY);
+                        const row = el && el.closest ? el.closest('[data-cinema-row="1"]') : null;
+                        const overCinema = row ? row.getAttribute("data-cinema-name") : null;
+                        if (overCinema) {
+                          touchDragOverRef.current = overCinema;
+                          setTouchOverCinema(overCinema);
+                        }
+                      }}
+                      onTouchEnd={(e) => {
+                        e.stopPropagation();
+                        moveCinema(touchDragFromRef.current, touchDragOverRef.current);
+                        touchDragFromRef.current = null;
+                        touchDragOverRef.current = null;
+                        setGrabbedCinema(null);
+                        setTouchOverCinema(null);
+                        setTimeout(() => setIsReordering(false), 0);
+                      }}
+                      onTouchCancel={(e) => {
+                        e.stopPropagation();
+                        touchDragFromRef.current = null;
+                        touchDragOverRef.current = null;
+                        setGrabbedCinema(null);
+                        setTouchOverCinema(null);
+                        setTimeout(() => setIsReordering(false), 0);
+                      }}
+                    >
+                      ⋮
+                    </span>
                   </div>
                 ))}
               </div>
@@ -686,7 +845,7 @@
             {!loading &&
               !error &&
               showtimesData &&
-              selectedCinemas.map((cinema, cinemaIdx) => {
+              orderedSelectedCinemas.map((cinema, cinemaIdx) => {
                 const showtimeKeys = Object.keys(showtimesData || {});
                 const keyByNormalized = new Map(
                   showtimeKeys.map((name) => [normalizeCinemaName(name), name])
@@ -911,8 +1070,8 @@
             {!loading &&
               !error &&
               showtimesData &&
-              selectedCinemas.length > 0 &&
-              selectedCinemas.every((cinema) => {
+              orderedSelectedCinemas.length > 0 &&
+              orderedSelectedCinemas.every((cinema) => {
                 const showtimeKeys = Object.keys(showtimesData || {});
                 const keyByNormalized = new Map(
                   showtimeKeys.map((name) => [normalizeCinemaName(name), name])
