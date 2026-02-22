@@ -65,7 +65,7 @@
       }
       .seances-title { margin: 0; font-weight: 600; }
       .seances-director { font-weight: 400; margin: 0 0 12px 0; }
-  .seances-duration { margin: 0 0 12px 0; }
+      .seances-duration { margin: 0; }
       .seances-avec { margin: 0; }
       .seances-loading-overlay {
         position: fixed;
@@ -716,19 +716,17 @@
                     {films.map((film, filmIdx) => {
                       const filmKey = `${cinema}-${filmIdx}`;
                       const isExpanded = expandedFilm === filmKey;
-                      const compactBottomPadding =
-                        !isExpanded && film.showtimes && film.showtimes.length <= 1
-                          ? "8px"
-                          : isExpanded
-                          ? "0"
-                          : "14px";
+                      const compactTopPadding = "10px";
+                      const compactBottomPadding = isExpanded ? "0" : "14px";
                       return (
                         <div
                           key={filmIdx}
                           style={{
                             backgroundColor: isExpanded ? "#ffffff" : "#929299",
                             borderBottom: "1px solid #000000",
-                            padding: "14px",
+                            paddingLeft: "14px",
+                            paddingRight: "14px",
+                            paddingTop: compactTopPadding,
                             paddingBottom: compactBottomPadding,
                             position: "relative",
                             cursor: "pointer",
@@ -810,7 +808,7 @@
                                 {film.genres && film.genres.length > 1 ? film.genres[1] : ""}
                               </div>
 
-                              <div className="seances-garamond seances-duration" style={{ paddingRight: "15px" }}>
+                              <div className="seances-garamond seances-duration" style={{ paddingRight: "15px", marginBottom: "12px" }}>
                                 {film.duration || "Durée inconnue"}
                               </div>
                               <div className="seances-garamond">
@@ -887,7 +885,7 @@
                             style={{
                               position: "absolute",
                               right: "14px",
-                              top: "14px",
+                              top: "10px",
                               transform: "translateY(-2px)",
                               fontFamily: '"EB Garamond", serif',
                               fontSize: "20px",
