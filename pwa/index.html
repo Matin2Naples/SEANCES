@@ -417,6 +417,17 @@
           const date = new Date(dateStr);
           return date.getFullYear();
         };
+        const now = new Date();
+        const isSelectedDateToday =
+          selectedDate.toDateString() === now.toDateString();
+        const isPastShowtime = (startTime) => {
+          if (!isSelectedDateToday || !startTime) return false;
+          const [h, m] = String(startTime).split(":").map(Number);
+          if (Number.isNaN(h) || Number.isNaN(m)) return false;
+          const showtimeDate = new Date(selectedDate);
+          showtimeDate.setHours(h, m, 0, 0);
+          return showtimeDate < now;
+        };
         const normalizeCinemaName = (name) =>
           name
             .toLowerCase()
@@ -764,6 +775,7 @@
                                       style={{
                                         marginBottom:
                                           timeIdx < film.showtimes.length - 1 ? "4px" : "0",
+                                        opacity: isPastShowtime(time.start) ? 0.4 : 1,
                                       }}
                                     >
                                       <span style={{ fontWeight: "600" }}>{time.start}</span>
