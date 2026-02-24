@@ -126,6 +126,62 @@ def normalize_title(title):
     clean_title = re.sub(r'\s+', ' ', clean_title).strip()
     return clean_title
 
+def normalize_image_url(url):
+    if not url:
+        return None
+    url = str(url).strip()
+    if not url:
+        return None
+    if url.startswith("//"):
+        return f"https:{url}"
+    if url.startswith("/"):
+        return f"https://www.allocine.fr{url}"
+    return url
+
+def extract_allocine_poster_from_movie_data(movie_data):
+    """Extrait une URL d'affiche depuis la structure JSON Allociné."""
+    if not isinstance(movie_data, dict):
+        return None
+
+    direct_keys = ["poster", "picture", "thumbnail", "image", "cover"]
+    url_keys = ["url", "href", "src", "path", "filePath", "filename"]
+
+    for key in direct_keys:
+        value = movie_data.get(key)
+        if isinstance(value, str) and any(ext in value.lower() for ext in [".jpg", ".jpeg", ".png", ".webp"]):
+            return normalize_image_url(value)
+        if isinstance(value, dict):
+            for uk in url_keys:
+                uv = value.get(uk)
+                if isinstance(uv, str) and uv:
+                    return normalize_image_url(uv)
+
+    stack = [movie_data]
+    seen = set()
+    while stack:
+        node = stack.pop()
+        node_id = id(node)
+        if node_id in seen:
+            continue
+        seen.add(node_id)
+        if isinstance(node, dict):
+            for k, v in node.items():
+                lk = str(k).lower()
+                if isinstance(v, str):
+                    if any(ext in v.lower() for ext in [".jpg", ".jpeg", ".png", ".webp"]) and any(
+                        hint in lk for hint in ["poster", "image", "picture", "cover", "thumb"]
+                    ):
+                        return normalize_image_url(v)
+                elif isinstance(v, (dict, list)):
+                    stack.append(v)
+        elif isinstance(node, list):
+            for item in node:
+                if isinstance(item, (dict, list)):
+                    stack.append(item)
+                elif isinstance(item, str) and any(ext in item.lower() for ext in [".jpg", ".jpeg", ".png", ".webp"]):
+                    return normalize_image_url(item)
+    return None
+
 def pick_best_poster_path(details, movie_candidate=None):
     """Choisit une affiche en privilégiant l'anglais, puis l'original, puis le français."""
     if not isinstance(details, dict):
@@ -275,6 +331,7 @@ def fetch_allocine_showtimes_json(cinema_id, date_str):
                 movie_data = element.get('movie', {}) or {}
                 title = movie_data.get('title', 'Titre inconnu')
                 production_year = movie_data.get('productionYear')
+                poster_url = extract_allocine_poster_from_movie_data(movie_data)
                 showtimes = []
                 for showtimes_key in element.get('showtimes', {}).keys():
                     for showtime in element.get('showtimes', {}).get(showtimes_key, []):
@@ -283,10 +340,12 @@ def fetch_allocine_showtimes_json(cinema_id, date_str):
                             showtimes.append(starts_at)
 
                 if showtimes:
-                    entry = movies_map.setdefault(title, {'showtimes': set(), 'year_hint': None})
+                    entry = movies_map.setdefault(title, {'showtimes': set(), 'year_hint': None, 'poster_url': None})
                     entry['showtimes'].update(showtimes)
                     if entry['year_hint'] is None and production_year:
                         entry['year_hint'] = production_year
+                    if entry['poster_url'] is None and poster_url:
+                        entry['poster_url'] = poster_url
 
             page += 1
 
@@ -305,7 +364,8 @@ def fetch_allocine_showtimes_json(cinema_id, date_str):
                 movies.append({
                     'title': title,
                     'start_times': sorted(set(start_times)),
-                    'year_hint': payload.get('year_hint')
+                    'year_hint': payload.get('year_hint'),
+                    'poster_url': payload.get('poster_url')
                 })
 
         return movies
@@ -366,9 +426,16 @@ def fetch_allocine_showtimes_html(cinema_id):
                         unique_showtimes.append(st)
                 
                 if unique_showtimes:
+                    poster_url = None
+                    poster_img = movie_div.select_one('img.thumbnail-img, img.thumbnail, .thumbnail img, img[data-src], img[src]')
+                    if poster_img:
+                        poster_url = normalize_image_url(
+                            poster_img.get('data-src') or poster_img.get('src')
+                        )
                     movies.append({
                         'title': title,
-                        'showtimes': sorted(unique_showtimes, key=lambda x: x['start'])
+                        'showtimes': sorted(unique_showtimes, key=lambda x: x['start']),
+                        'poster_url': poster_url
                     })
                     
             except Exception as e:
@@ -392,6 +459,7 @@ def scrape_allocine_showtimes(cinema_id, date_str):
     for movie in movies:
         title = movie.get('title', 'Titre inconnu')
         year_hint = movie.get('year_hint')
+        allocine_poster_url = movie.get('poster_url')
         showtimes = movie.get('showtimes')
         if not showtimes:
             start_times = movie.get('start_times', [])
@@ -417,7 +485,7 @@ def scrape_allocine_showtimes(cinema_id, date_str):
                 'duration': tmdb_data['duration'],
                 'showtimes': sorted(showtimes, key=lambda x: x['start']),
                 'actors': tmdb_data['actors'],
-                'poster_url': tmdb_data['poster_url'],
+                'poster_url': allocine_poster_url or tmdb_data['poster_url'],
                 'letterboxd_url': tmdb_data.get('letterboxd_url'),
                 'release_date': tmdb_data['release_date'],
                 'overview': tmdb_data['overview'],
@@ -431,7 +499,7 @@ def scrape_allocine_showtimes(cinema_id, date_str):
                 'duration': '2h00',
                 'showtimes': sorted(showtimes, key=lambda x: x['start']),
                 'actors': [],
-                'poster_url': None,
+                'poster_url': allocine_poster_url,
                 'letterboxd_url': None,
                 'release_date': '',
                 'overview': '',
