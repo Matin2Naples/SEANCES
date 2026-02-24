@@ -127,7 +127,7 @@ def normalize_title(title):
     return clean_title
 
 def pick_best_poster_path(details, movie_candidate=None):
-    """Choisit une affiche en privilégiant la langue originale du film."""
+    """Choisit une affiche en privilégiant l'anglais, puis l'original, puis le français."""
     if not isinstance(details, dict):
         return None
 
@@ -145,16 +145,16 @@ def pick_best_poster_path(details, movie_candidate=None):
             p.get('width', 0),
         )
 
-    # 1) Langue originale
+    # 1) Anglais
+    en = [p for p in posters if p.get('iso_639_1') == 'en' and p.get('file_path')]
+    if en:
+        return max(en, key=poster_quality).get('file_path')
+
+    # 2) Langue originale
     if original_lang:
         same_lang = [p for p in posters if p.get('iso_639_1') == original_lang and p.get('file_path')]
         if same_lang:
             return max(same_lang, key=poster_quality).get('file_path')
-
-    # 2) Anglais
-    en = [p for p in posters if p.get('iso_639_1') == 'en' and p.get('file_path')]
-    if en:
-        return max(en, key=poster_quality).get('file_path')
 
     # 3) Français
     fr = [p for p in posters if p.get('iso_639_1') == 'fr' and p.get('file_path')]
