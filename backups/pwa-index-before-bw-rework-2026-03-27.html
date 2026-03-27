@@ -19,7 +19,7 @@
       html, body {
         margin: 0;
         padding: 0;
-        background: #000000;
+        background: #929299;
       }
       #root {
         min-height: 100vh;
@@ -56,7 +56,7 @@
         font-size: 16px;
         line-height: 20px;
         margin: 0;
-        color: #ffffff;
+        color: inherit;
       }
       .seances-ellipsis {
         overflow: hidden;
@@ -97,7 +97,7 @@
         text-align: right;
         font-size: 20px;
         line-height: 20px;
-        color: #ffffff;
+        color: #929299;
         font-family: Helvetica, Arial, sans-serif;
         letter-spacing: 1px;
         white-space: pre;
@@ -108,7 +108,7 @@
         left: 0;
         right: 0;
         bottom: 0;
-        background: #000000;
+        background: #929299;
         z-index: 1500;
       }
       .seances-header-ellipsis {
@@ -120,11 +120,43 @@
         text-align: right;
         font-size: 20px;
         line-height: 20px;
-        color: #ffffff;
+        color: #929299;
         font-family: Helvetica, Arial, sans-serif;
         letter-spacing: 1px;
         white-space: pre;
         userSelect: "none";
+      }
+      .seances-projection-mode * {
+        text-shadow:
+          0 0 6px rgba(255, 255, 255, 0.30),
+          0 0 14px rgba(255, 255, 255, 0.28);
+        animation: seancesProjectionTextFlicker 1.35s infinite steps(1, end);
+      }
+      @keyframes seancesProjectionTextFlicker {
+        0% {
+          text-shadow: 0 0 5px rgba(255,255,255,0.26), 0 0 12px rgba(255,255,255,0.24);
+        }
+        20% {
+          text-shadow: 0 0 7px rgba(255,255,255,0.38), 0 0 16px rgba(255,255,255,0.34);
+        }
+        40% {
+          text-shadow: 0 0 4px rgba(255,255,255,0.22), 0 0 10px rgba(255,255,255,0.20);
+        }
+        60% {
+          text-shadow: 0 0 8px rgba(255,255,255,0.42), 0 0 18px rgba(255,255,255,0.36);
+        }
+        80% {
+          text-shadow: 0 0 5px rgba(255,255,255,0.28), 0 0 13px rgba(255,255,255,0.24);
+        }
+        100% {
+          text-shadow: 0 0 6px rgba(255,255,255,0.30), 0 0 14px rgba(255,255,255,0.28);
+        }
+      }
+      .seances-projection-poster {
+        position: relative;
+        z-index: 1200;
+        filter: grayscale(1) contrast(2.25) brightness(1.12) invert(1);
+        box-shadow: none;
       }
 </style>
   </head>
@@ -185,20 +217,8 @@
         const [forceSplash, setForceSplash] = useState(true);
         const [ellipsisCount, setEllipsisCount] = useState(0);
         const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+        const [projectionMode, setProjectionMode] = useState(false);
         const HEADER_HEIGHT = 56;
-        const PAGE_BG = "#000000";
-        const SURFACE_BG = "#000000";
-        const TEXT_PRIMARY = "#ffffff";
-        const TEXT_MUTED = "#d0d0d0";
-        const LOGO_GREEN = "#c1ff00";
-        const RULE_COLOR = "#ffffff";
-        const HORIZONTAL_MARGIN = 14;
-        const insetBottomRule = {
-          backgroundImage: `linear-gradient(${RULE_COLOR}, ${RULE_COLOR})`,
-          backgroundRepeat: "no-repeat",
-          backgroundPosition: "center bottom",
-          backgroundSize: `calc(100% - ${HORIZONTAL_MARGIN * 2}px) 1px`,
-        };
 
         const getApiUrl = () => {
           const params = new URLSearchParams(window.location.search);
@@ -284,10 +304,10 @@
         }, [showCinemaSelector]);
 
         useEffect(() => {
-          const bg = "#000000";
+          const bg = loaderVisible ? "#000000" : (projectionMode ? "#000000" : "#929299");
           document.documentElement.style.background = bg;
           document.body.style.background = bg;
-        }, [loaderVisible]);
+        }, [loaderVisible, projectionMode]);
 
         useEffect(() => {
           if (isDemoMode) {
@@ -509,13 +529,26 @@
             .replace(/\s+/g, " ")
             .trim();
         const orderedSelectedCinemas = allCinemas.filter((name) => selectedCinemas.includes(name));
+        const pageBg = projectionMode ? "#000000" : "#929299";
+        const panelBg = projectionMode ? "#000000" : "#929299";
+        const panelExpandedBg = projectionMode ? "#000000" : "#ffffff";
+        const lineColor = projectionMode ? "#ffffff" : "#000000";
+        const textPrimary = projectionMode ? "#ffffff" : "#000000";
+        const textSecondary = projectionMode ? "#9a9a9a" : "#929299";
+        const headerBg = projectionMode ? "#ffffff" : "#000000";
+        const headerLogo = projectionMode ? "#000000" : "#c1ff00";
+        const headerDate = projectionMode ? "#9a9a9a" : "#ffffff";
+        const selectorSelectedBg = projectionMode ? "#000000" : "#c1ff00";
+        const selectorUnselectedBg = projectionMode ? "#000000" : "#929299";
+        const selectorUnselectedText = projectionMode ? "#b3b3b3" : "#000000";
 
         if (showCinemaSelector) {
           return (
             <div
+              className={projectionMode ? "seances-projection-mode" : ""}
               style={{
                 fontFamily: "Helvetica, Arial, sans-serif",
-                backgroundColor: PAGE_BG,
+                backgroundColor: pageBg,
                 minHeight: "100vh",
                 userSelect: "none",
                 WebkitUserSelect: "none",
@@ -526,10 +559,9 @@
                 style={{
                   position: "sticky",
                   top: 0,
-                  backgroundColor: PAGE_BG,
-                  color: TEXT_PRIMARY,
-                  padding: "14px",
-                  ...insetBottomRule,
+                  backgroundColor: headerBg,
+                  color: "#e2e4e8",
+                padding: "14px",
                   zIndex: 100,
                 }}
               >
@@ -541,7 +573,10 @@
                     position: "relative",
                   }}
                 >
-                  <div style={{ fontSize: "24px", fontWeight: "400", color: LOGO_GREEN }}>
+                  <div
+                    style={{ fontSize: "24px", fontWeight: "400", color: headerLogo, cursor: "pointer" }}
+                    onClick={() => setProjectionMode((v) => !v)}
+                  >
                     Séance(s)
                   </div>
                   <div
@@ -549,7 +584,7 @@
                       position: "absolute",
                       left: "50%",
                       fontSize: "24px",
-                      color: TEXT_PRIMARY,
+                      color: headerDate,
                     }}
                   >
                     {formatDate(selectedDate)}
@@ -564,7 +599,7 @@
                       textAlign: "right",
                       fontSize: "24px",
                       lineHeight: "20px",
-                      color: TEXT_PRIMARY,
+                      color: textSecondary,
                       cursor: "pointer",
                       userSelect: "none",
                     }}
@@ -603,12 +638,12 @@
                       paddingRight: "52px",
                       fontSize: "24px",
                       fontWeight: "400",
-                      color: selectedCinemas.includes(cinema) ? LOGO_GREEN : TEXT_PRIMARY,
-                      backgroundColor: SURFACE_BG,
-                      ...insetBottomRule,
+                      color: selectedCinemas.includes(cinema) ? textPrimary : selectorUnselectedText,
+                      backgroundColor: selectedCinemas.includes(cinema) ? selectorSelectedBg : selectorUnselectedBg,
+                      borderBottom: `1px solid ${lineColor}`,
                       borderTop:
                         isReordering && touchOverCinema === cinema
-                          ? `3px solid ${RULE_COLOR}`
+                          ? `3px solid ${lineColor}`
                           : "0px solid transparent",
                       cursor: "pointer",
                       transition: "background-color 0.2s",
@@ -641,7 +676,7 @@
                         textAlign: "right",
                         fontSize: "24px",
                         lineHeight: "24px",
-                        color: TEXT_PRIMARY,
+                        color: textSecondary,
                         letterSpacing: "0",
                         userSelect: "none",
                         touchAction: "none",
@@ -698,9 +733,10 @@
 
         return (
           <div
+            className={projectionMode ? "seances-projection-mode" : ""}
             style={{
               fontFamily: "Helvetica, Arial, sans-serif",
-              backgroundColor: PAGE_BG,
+              backgroundColor: pageBg,
               minHeight: "100vh",
               paddingBottom: "40px",
             }}
@@ -709,10 +745,9 @@
               style={{
                 position: "sticky",
                 top: 0,
-                backgroundColor: PAGE_BG,
-                color: TEXT_PRIMARY,
+                backgroundColor: headerBg,
+                color: "#e2e4e8",
                 padding: "14px",
-                ...insetBottomRule,
                 zIndex: 100,
               }}
             >
@@ -724,7 +759,10 @@
                   position: "relative",
                 }}
               >
-                <div style={{ fontSize: "24px", fontWeight: "400", color: LOGO_GREEN }}>
+                <div
+                  style={{ fontSize: "24px", fontWeight: "400", color: headerLogo, cursor: "pointer" }}
+                  onClick={() => setProjectionMode((v) => !v)}
+                >
                   Séance(s)
                 </div>
                 <div
@@ -733,7 +771,7 @@
                     position: "absolute",
                     left: "50%",
                     fontSize: "24px",
-                    color: TEXT_PRIMARY,
+                    color: headerDate,
                     cursor: "pointer",
                     userSelect: "none",
                   }}
@@ -751,7 +789,7 @@
                       textAlign: "right",
                       fontSize: "24px",
                       lineHeight: "20px",
-                      color: TEXT_PRIMARY,
+                      color: textSecondary,
                       cursor: "pointer",
                       userSelect: "none",
                     }}
@@ -775,7 +813,7 @@
                   left: 0,
                   right: 0,
                   bottom: 0,
-                  backgroundColor: PAGE_BG,
+                  backgroundColor: pageBg,
                   zIndex: 99,
                   overflowY: "auto",
                 }}
@@ -792,12 +830,12 @@
                       paddingLeft: "50%",
                       fontSize: "24px",
                       cursor: "pointer",
-                      color:
+                      color: textPrimary,
+                      backgroundColor:
                         date.toDateString() === selectedDate.toDateString()
-                          ? LOGO_GREEN
-                          : TEXT_PRIMARY,
-                      backgroundColor: SURFACE_BG,
-                      ...insetBottomRule,
+                          ? (projectionMode ? "#111111" : "#c1ff00")
+                          : pageBg,
+                      borderBottom: `1px solid ${lineColor}`,
                       transition: "background-color 0.2s",
                     }}
                   >
@@ -833,11 +871,11 @@
                   padding: "40px",
                   textAlign: "center",
                   fontSize: "18px",
-                  color: TEXT_PRIMARY,
+                  color: "#ff0000",
                 }}
               >
                 {error}
-                <div style={{ marginTop: "8px", fontSize: "12px", color: TEXT_MUTED }}>
+                <div style={{ marginTop: "8px", fontSize: "12px", color: "#333" }}>
                   API: {API_URL}
                 </div>
                 <div
@@ -845,12 +883,11 @@
                   style={{
                     marginTop: "16px",
                     padding: "12px 24px",
-                    backgroundColor: SURFACE_BG,
-                    color: TEXT_PRIMARY,
+                    backgroundColor: "#000000",
+                    color: "#ffffff",
                     cursor: "pointer",
                     display: "inline-block",
                     borderRadius: "4px",
-                    border: `1px solid ${RULE_COLOR}`,
                   }}
                 >
                   Réessayer
@@ -877,12 +914,12 @@
                       style={{
                         position: "sticky",
                         top: "56px",
-                        backgroundColor: SURFACE_BG,
+                        backgroundColor: panelBg,
                         padding: "14px",
                         fontSize: "24px",
                         fontWeight: "400",
-                        color: TEXT_PRIMARY,
-                        ...insetBottomRule,
+                        color: textPrimary,
+                        borderBottom: `1px solid ${lineColor}`,
                         zIndex: 50,
                       }}
                     >
@@ -898,14 +935,15 @@
                         <div
                           key={filmIdx}
                           style={{
-                            backgroundColor: SURFACE_BG,
+                            backgroundColor: isExpanded ? panelExpandedBg : panelBg,
+                            borderBottom: `1px solid ${lineColor}`,
                             paddingLeft: "14px",
                             paddingRight: "14px",
                             paddingTop: compactTopPadding,
                             paddingBottom: compactBottomPadding,
                             position: "relative",
                             cursor: "pointer",
-                            ...insetBottomRule,
+                            color: textPrimary,
                           }}
                           onClick={() => toggleFilmExpansion(cinema, filmIdx)}
                         >
@@ -923,7 +961,7 @@
                                   style={{
                                     fontFamily: '"EB Garamond", serif',
                                     fontSize: "16px",
-                                    color: TEXT_PRIMARY,
+                                    color: textPrimary,
                                     maxWidth: "100%",
                                     minWidth: 0,
                                     paddingRight: "15px",
@@ -939,7 +977,7 @@
                                     fontFamily: '"EB Garamond", serif',
                                     fontSize: "16px",
                                     lineHeight: "18px",
-                                    color: TEXT_PRIMARY,
+                                    color: textPrimary,
                                     textAlign: "left",
                                   }}
                                 >
@@ -1004,6 +1042,7 @@
                               <div style={{ marginRight: "-20px" }}>
                                 {film.poster_url ? (
                                   <img
+                                    className={projectionMode ? "seances-projection-poster" : ""}
                                     src={film.poster_url}
                                     alt={film.title}
                                     style={{
@@ -1016,10 +1055,11 @@
                                   />
                                 ) : (
                                   <div
+                                    className={projectionMode ? "seances-projection-poster" : ""}
                                     style={{
                                       width: "100%",
                                       height: "260px",
-                                      backgroundColor: "#111111",
+                                      backgroundColor: projectionMode ? "#111111" : "#e6e6e6",
                                       marginTop: "6px",
                                     }}
                                   />
@@ -1066,7 +1106,7 @@
                               fontFamily: '"EB Garamond", serif',
                               fontSize: "20px",
                               lineHeight: "20px",
-                              color: TEXT_PRIMARY,
+                              color: textPrimary,
                               userSelect: "none",
                             }}
                             onClick={(e) => {
@@ -1097,21 +1137,21 @@
                 return (showtimesData[resolvedName] || []).length === 0;
               }) && (
                 <div
-                style={{
-                  padding: "40px",
-                  textAlign: "center",
-                  fontSize: "16px",
-                  color: TEXT_PRIMARY,
-                }}
-              >
-                Aucun film pour les cinémas sélectionnés.
-                  <div style={{ marginTop: "8px", fontSize: "12px", color: TEXT_MUTED }}>
+                  style={{
+                    padding: "40px",
+                    textAlign: "center",
+                    fontSize: "16px",
+                    color: "#000000",
+                  }}
+                >
+                  Aucun film pour les cinémas sélectionnés.
+                  <div style={{ marginTop: "8px", fontSize: "12px", color: "#333" }}>
                     API: {API_URL}
                   </div>
-                  <div style={{ marginTop: "12px", fontSize: "12px", color: TEXT_MUTED }}>
+                  <div style={{ marginTop: "12px", fontSize: "12px", color: "#333" }}>
                     Cinémas reçus:
                   </div>
-                  <div style={{ marginTop: "6px", fontSize: "12px", color: TEXT_MUTED }}>
+                  <div style={{ marginTop: "6px", fontSize: "12px", color: "#333" }}>
                     {(showtimesData && Object.keys(showtimesData).slice(0, 6).map((name) => (
                       <div key={name}>
                         {name} — {(showtimesData[name] || []).length} films
@@ -1123,12 +1163,11 @@
                     style={{
                       marginTop: "16px",
                       padding: "12px 24px",
-                      backgroundColor: SURFACE_BG,
-                      color: TEXT_PRIMARY,
+                      backgroundColor: "#000000",
+                      color: "#ffffff",
                       cursor: "pointer",
                       display: "inline-block",
                       borderRadius: "4px",
-                      border: `1px solid ${RULE_COLOR}`,
                     }}
                   >
                     Recharger
@@ -1142,11 +1181,11 @@
                   padding: "40px",
                   textAlign: "center",
                   fontSize: "16px",
-                  color: TEXT_PRIMARY,
+                  color: "#000000",
                 }}
               >
                 Aucune donnée chargée.
-                <div style={{ marginTop: "8px", fontSize: "12px", color: TEXT_MUTED }}>
+                <div style={{ marginTop: "8px", fontSize: "12px", color: "#333" }}>
                   API: {API_URL}
                 </div>
                 <div
@@ -1154,12 +1193,11 @@
                   style={{
                     marginTop: "16px",
                     padding: "12px 24px",
-                    backgroundColor: SURFACE_BG,
-                    color: TEXT_PRIMARY,
+                    backgroundColor: "#000000",
+                    color: "#ffffff",
                     cursor: "pointer",
                     display: "inline-block",
                     borderRadius: "4px",
-                    border: `1px solid ${RULE_COLOR}`,
                   }}
                 >
                   Recharger
@@ -1173,7 +1211,7 @@
                   padding: "40px",
                   textAlign: "center",
                   fontSize: "16px",
-                  color: TEXT_PRIMARY,
+                  color: "#000000",
                 }}
               >
                 Aucun cinéma sélectionné.
@@ -1182,12 +1220,11 @@
                   style={{
                     marginTop: "16px",
                     padding: "12px 24px",
-                    backgroundColor: SURFACE_BG,
-                    color: TEXT_PRIMARY,
+                    backgroundColor: "#000000",
+                    color: "#ffffff",
                     cursor: "pointer",
                     display: "inline-block",
                     borderRadius: "4px",
-                    border: `1px solid ${RULE_COLOR}`,
                   }}
                 >
                   Choisir des cinémas
